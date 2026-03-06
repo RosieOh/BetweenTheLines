@@ -7,24 +7,24 @@
 @layer base {
   :root {
     --background: 0 0% 100%;
-    --foreground: 220 20% 10%;
+    --foreground: 220 15% 13%;
 
     --card: 0 0% 100%;
-    --card-foreground: 220 20% 10%;
+    --card-foreground: 220 15% 13%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 10%;
+    --popover-foreground: 220 15% 13%;
 
-    --primary: 222 60% 18%;
+    --primary: 220 15% 13%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 220 14% 96%;
-    --secondary-foreground: 220 20% 10%;
+    --secondary-foreground: 220 15% 13%;
 
     --muted: 220 14% 96%;
-    --muted-foreground: 220 10% 46%;
+    --muted-foreground: 220 9% 46%;
 
-    --accent: 222 80% 55%;
+    --accent: 217 91% 60%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 72% 51%;
@@ -32,19 +32,22 @@
 
     --border: 220 13% 91%;
     --input: 220 13% 91%;
-    --ring: 222 80% 55%;
+    --ring: 217 91% 60%;
 
-    --radius: 0.75rem;
+    --radius: 0.625rem;
 
-    /* Custom tokens */
-    --surface-elevated: 0 0% 100%;
-    --surface-subtle: 220 20% 98%;
-    --text-caption: 220 10% 56%;
-    --brand-glow: 222 80% 55%;
-    --brand-gradient: linear-gradient(135deg, hsl(222 60% 18%), hsl(222 80% 55%));
-    --warning-bg: 38 92% 95%;
-    --warning-text: 38 80% 35%;
-    --penalty-red: 0 72% 51%;
+    /* Blog-specific tokens */
+    --hero-bg: 220 15% 8%;
+    --hero-foreground: 0 0% 100%;
+    --category-pps: 217 91% 60%;
+    --category-dig: 168 76% 42%;
+    --category-gcc: 38 92% 50%;
+    --category-wfa: 262 83% 58%;
+    --category-aes: 0 72% 51%;
+    --tag-bg: 220 14% 96%;
+    --tag-active-bg: 220 15% 13%;
+    --tag-active-fg: 0 0% 100%;
+    --sidebar-bg: 220 20% 97%;
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -55,51 +58,6 @@
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
-
-  .dark {
-    --background: 220 20% 6%;
-    --foreground: 220 14% 96%;
-
-    --card: 220 20% 10%;
-    --card-foreground: 220 14% 96%;
-
-    --popover: 220 20% 10%;
-    --popover-foreground: 220 14% 96%;
-
-    --primary: 222 80% 60%;
-    --primary-foreground: 220 20% 6%;
-
-    --secondary: 220 20% 14%;
-    --secondary-foreground: 220 14% 96%;
-
-    --muted: 220 20% 14%;
-    --muted-foreground: 220 10% 56%;
-
-    --accent: 222 80% 55%;
-    --accent-foreground: 0 0% 100%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 220 20% 18%;
-    --input: 220 20% 18%;
-    --ring: 222 80% 55%;
-
-    --surface-elevated: 220 20% 12%;
-    --surface-subtle: 220 20% 8%;
-    --text-caption: 220 10% 50%;
-    --warning-bg: 38 50% 15%;
-    --warning-text: 38 70% 65%;
-
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
-  }
 }
 
 @layer base {
@@ -108,28 +66,23 @@
   }
 
   body {
-    @apply bg-background text-foreground font-sans antialiased;
-    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    letter-spacing: -0.01em;
   }
 }
 
 @layer utilities {
-  .text-gradient {
-    background: var(--brand-gradient);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
-
-  .surface-elevated {
-    background-color: hsl(var(--surface-elevated));
-  }
-
-  .surface-subtle {
-    background-color: hsl(var(--surface-subtle));
-  }
-
-  .glow-accent {
-    box-shadow: 0 0 40px -10px hsl(var(--brand-glow) / 0.3);
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 }
