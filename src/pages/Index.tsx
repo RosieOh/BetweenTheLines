@@ -1,21 +1,17 @@
-import Header from "@/components/blog/Header";
-import HeroSection from "@/components/blog/HeroSection";
-import PillarSection from "@/components/blog/PillarSection";
-import FeaturedPosts from "@/components/blog/FeaturedPosts";
-import CtaSection from "@/components/blog/CtaSection";
-import Footer from "@/components/blog/Footer";
+import BlogHeader from "@/components/blog/BlogHeader";
+import BlogHero from "@/components/blog/BlogHero";
+import BlogArticleList from "@/components/blog/BlogArticleList";
+import BlogFooter from "@/components/blog/BlogFooter";
 
 const Index = () => {
   return (
     <div className="min-h-screen bg-background">
-      <Header />
+      <BlogHeader />
       <main>
-        <HeroSection />
-        <FeaturedPosts />
-        <PillarSection />
-        <CtaSection />
+        <BlogHero />
+        <BlogArticleList />
       </main>
-      <Footer />
+      <BlogFooter />
     </div>
   );
 };
