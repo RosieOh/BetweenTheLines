@@ -1,15 +1,17 @@
 import { useState } from "react";
-import { samplePosts, categories } from "@/data/posts";
+import { categories } from "@/data/posts";
+import { getAllPosts } from "@/lib/postStorage";
 import BlogArticleCard from "./BlogArticleCard";
 import BlogSidebar from "./BlogSidebar";
 
 const BlogArticleList = () => {
   const [activeCategory, setActiveCategory] = useState<string>("전체");
+  const allPosts = getAllPosts();
 
   const filtered =
     activeCategory === "전체"
-      ? samplePosts
-      : samplePosts.filter((p) => p.category === activeCategory);
+      ? allPosts
+      : allPosts.filter((p) => p.category === activeCategory);
 
   return (
     <section className="pb-20">
@@ -38,9 +40,13 @@ const BlogArticleList = () => {
         <div className="grid lg:grid-cols-[1fr_280px] gap-12">
           {/* Article list */}
           <div className="flex flex-col gap-0 divide-y divide-border">
-            {filtered.map((post) => (
-              <BlogArticleCard key={post.id} post={post} />
-            ))}
+            {filtered.length > 0 ? (
+              filtered.map((post) => <BlogArticleCard key={post.id} post={post} />)
+            ) : (
+              <div className="py-20 text-center text-[14px] text-muted-foreground">
+                이 카테고리에 아직 아티클이 없습니다.
+              </div>
+            )}
           </div>
 
           {/* Sidebar */}
