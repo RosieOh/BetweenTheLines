@@ -1,18 +1,16 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { samplePosts } from "@/data/posts";
+import { Link } from "react-router-dom";
+import { getAllPosts } from "@/lib/postStorage";
 import { motion, AnimatePresence } from "framer-motion";
 
-const featuredPosts = samplePosts.filter((p) => p.aciScore >= 700);
-
 const BlogHero = () => {
+  const featuredPosts = getAllPosts().filter((p) => p.aciScore >= 700);
   const [current, setCurrent] = useState(0);
   const post = featuredPosts[current];
 
-  const prev = () =>
-    setCurrent((c) => (c === 0 ? featuredPosts.length - 1 : c - 1));
-  const next = () =>
-    setCurrent((c) => (c === featuredPosts.length - 1 ? 0 : c + 1));
+  const prev = () => setCurrent((c) => (c === 0 ? featuredPosts.length - 1 : c - 1));
+  const next = () => setCurrent((c) => (c === featuredPosts.length - 1 ? 0 : c + 1));
 
   if (!post) return null;
 
@@ -35,11 +33,19 @@ const BlogHero = () => {
               <p className="text-base text-muted-foreground leading-relaxed mb-6 max-w-md">
                 {post.excerpt}
               </p>
-              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <div className="flex items-center gap-3 text-sm text-muted-foreground mb-6">
                 <span className="font-medium text-foreground">{post.author}</span>
                 <span>·</span>
                 <span>{post.date}</span>
+                <span>·</span>
+                <span>{post.readTime}</span>
               </div>
+              <Link
+                to={`/post/${post.id}`}
+                className="inline-flex px-5 py-2.5 rounded-full bg-primary text-primary-foreground text-[13px] font-semibold hover:opacity-90 transition-opacity"
+              >
+                읽기 →
+              </Link>
             </motion.div>
           </AnimatePresence>
 
@@ -57,25 +63,51 @@ const BlogHero = () => {
                 src={post.thumbnail}
                 alt={post.title}
                 className="w-full h-full object-cover"
+                loading="lazy"
               />
             </motion.div>
           </AnimatePresence>
         </div>
 
-        {/* Nav arrows */}
-        <div className="flex items-center gap-3 mt-8">
+        {/* Controls */}
+        <div className="flex items-center gap-4 mt-8">
           <button
             onClick={prev}
+            aria-label="이전 아티클"
             className="w-10 h-10 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
           >
             <ChevronLeft size={18} />
           </button>
+
+          {/* Dot indicators */}
+          <div className="flex items-center gap-2" role="tablist" aria-label="슬라이드 선택">
+            {featuredPosts.map((_, i) => (
+              <button
+                key={i}
+                role="tab"
+                aria-selected={i === current}
+                aria-label={`슬라이드 ${i + 1}`}
+                onClick={() => setCurrent(i)}
+                className={`rounded-full transition-all duration-200 ${
+                  i === current
+                    ? "w-5 h-2 bg-foreground"
+                    : "w-2 h-2 bg-border hover:bg-muted-foreground"
+                }`}
+              />
+            ))}
+          </div>
+
           <button
             onClick={next}
+            aria-label="다음 아티클"
             className="w-10 h-10 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
           >
             <ChevronRight size={18} />
           </button>
+
+          <span className="text-[13px] text-muted-foreground ml-1">
+            {current + 1} / {featuredPosts.length}
+          </span>
         </div>
       </div>
     </section>
