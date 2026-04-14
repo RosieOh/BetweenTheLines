@@ -31,6 +31,8 @@ jobs:
         run: npm ci
 
       - name: Build site
+        env:
+          VITE_BASE_PATH: /BetweenTheLines/
         run: npm run build
 
       - name: SPA fallback for GitHub Pages
