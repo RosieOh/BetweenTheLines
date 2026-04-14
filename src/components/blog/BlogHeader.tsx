@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Search, Menu, X } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import ThemeToggle from "@/components/blog/ThemeToggle";
 
 const navItems = [
   { label: "Engineering", href: "/engineering" },
-  { label: "ACI Pillars", href: "/aci-pillars" },
-  { label: "AES Guardrail", href: "/aes-guardrail" },
+  { label: "Newsletter", href: "/newsletter" },
+  { label: "소개", href: "/about" },
 ];
 
 const BlogHeader = () => {
@@ -15,6 +15,7 @@ const BlogHeader = () => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const navigate = useNavigate();
+  const { pathname } = useLocation();
 
   const submitSearch = (q: string) => {
     if (q.trim()) {
@@ -35,7 +36,7 @@ const BlogHeader = () => {
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2">
           <span className="text-lg font-extrabold tracking-tight text-foreground">
-            THE LOGIC
+            Between the Lines
           </span>
         </Link>
 
@@ -45,7 +46,12 @@ const BlogHeader = () => {
             <Link
               key={item.label}
               to={item.href}
-              className="text-[14px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+              aria-current={pathname === item.href ? "page" : undefined}
+              className={`text-[14px] font-medium transition-colors ${
+                pathname === item.href
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
             >
               {item.label}
             </Link>
@@ -96,12 +102,14 @@ const BlogHeader = () => {
 
           <ThemeToggle />
 
-          <Link
-            to="/newsletter"
+          <a
+            href="https://github.com/RosieOh"
+            target="_blank"
+            rel="noopener noreferrer"
             className="hidden md:inline-flex px-3.5 py-1.5 rounded-full bg-primary text-primary-foreground text-[13px] font-semibold hover:opacity-90 transition-opacity ml-1"
           >
-            구독하러 가기
-          </Link>
+            GitHub
+          </a>
 
           <button
             className="md:hidden p-2 rounded-lg text-muted-foreground hover:bg-secondary transition-colors"
@@ -143,19 +151,24 @@ const BlogHeader = () => {
                 <Link
                   key={item.label}
                   to={item.href}
-                  className="text-sm font-medium text-muted-foreground py-1.5"
+                  aria-current={pathname === item.href ? "page" : undefined}
+                  className={`text-sm font-medium py-1.5 transition-colors ${
+                    pathname === item.href ? "text-foreground" : "text-muted-foreground"
+                  }`}
                   onClick={() => setMobileOpen(false)}
                 >
                   {item.label}
                 </Link>
               ))}
-              <Link
-                to="/newsletter"
+              <a
+                href="https://github.com/RosieOh"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="mt-2 text-center px-4 py-2 rounded-full bg-primary text-primary-foreground text-sm font-semibold"
                 onClick={() => setMobileOpen(false)}
               >
-                구독하러 가기
-              </Link>
+                GitHub
+              </a>
             </div>
           </motion.nav>
         )}
