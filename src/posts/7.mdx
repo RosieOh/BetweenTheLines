@@ -1,0 +1,143 @@
+---
+title: '[Almighty 실전] Docker exec format error 복구기: 아키텍처 불일치를 30분 안에 잡는 법'
+date: '2026-04-14'
+author: '오태훈'
+description: '운영 배포 중 발생한 exec format error를 CPU 아키텍처 관점에서 분석하고, 이미지 빌드 전략을 표준화한 실전 기록입니다.'
+category: 'DevOps'
+tags: ['Docker', '배포', '트러블슈팅', 'Almighty', 'DevOps']
+readTime: '9분'
+thumbnail: 'cicd'
+---
+
+# [Almighty 실전] Docker exec format error 복구기
+
+운영 배포에서 가장 당황스러운 순간 중 하나는 "이미지는 정상적으로 빌드됐는데 컨테이너가 바로 죽는" 상황입니다. Almighty 배포 중 실제로 `exec format error`를 맞았고, 이 문제를 계기로 이미지 빌드/배포 기준을 팀 규칙으로 정리했습니다.
+
+이번 글은 "장애를 어떻게 고쳤는가"보다 한 단계 더 들어가, 왜 이런 문제가 반복되는지와 팀 배포 규칙을 어떻게 바꿨는지까지 남겨두려고 합니다.
+
+## 🚨 문제
+
+- 증상: 컨테이너 시작 직후 종료, 로그에 `exec format error`
+- 영향: 신규 배포 버전 서비스 불가, 즉시 롤백 필요
+- 발생 맥락: 로컬(Mac)에서 빌드한 이미지를 리눅스 서버에서 실행
+
+대표 로그:
+
+```bash
+standard_init_linux.go:228: exec user process caused: exec format error
+```
+
+## 🧪 재현
+
+1. ARM 기반 로컬에서 기본 빌드(`docker build`) 수행
+2. 이미지를 레지스트리에 푸시
+3. x86_64 서버에서 pull 후 컨테이너 실행
+4. 엔트리포인트 실행 단계에서 실패
+
+## 🔍 원인 분석
+
+핵심은 "바이너리 실행 아키텍처 불일치"였습니다.
+
+- 로컬 환경은 ARM64
+- 운영 서버는 AMD64(x86_64)
+- 이미지 내부 실행 파일/JRE 레이어가 ARM으로 만들어진 상태
+
+즉, 앱 코드는 정상이어도 런타임 계층이 서버 CPU와 맞지 않아 컨테이너가 시작 단계에서 터진 겁니다.
+
+## 🛠️ 해결
+
+### 1) 빌드 아키텍처를 명시적으로 고정
+
+```bash
+docker buildx build \
+  --platform linux/amd64 \
+  -t your-registry/almighty-api:2026-04-14 \
+  --push .
+```
+
+### 2) 서버에서 이미지 아키텍처 검증 절차 추가
+
+```bash
+docker manifest inspect your-registry/almighty-api:2026-04-14 | jq '.manifests[].platform'
+```
+
+### 3) 배포 전 체크리스트에 필수 항목으로 편입
+
+- "이미지 플랫폼 = 서버 플랫폼" 일치 확인
+- CI 빌드에서 `--platform` 고정
+- 릴리즈 노트에 빌드 플랫폼 기록
+
+## ✅ 검증
+
+- 동일 버전 이미지 재배포 후 정상 기동
+- 헬스체크 통과, API 응답 정상
+- 이후 배포에서 동일 이슈 재발 0건
+
+## 📌 교훈
+
+1. Docker는 "한 번 빌드하면 어디서나 실행"이 아니라 "호환 플랫폼에서 실행"입니다.
+2. Apple Silicon 개발 환경은 편리하지만, 배포 타깃 아키텍처를 명시하지 않으면 위험합니다.
+3. 배포 자동화 파이프라인에서 플랫폼 검증을 코드화해야 합니다.
+
+## ♻️ 재사용 스니펫
+
+```bash
+# 서버 아키텍처 확인
+uname -m
+
+# 이미지 아키텍처 확인
+docker image inspect your-registry/almighty-api:tag --format '{{.Architecture}}'
+
+# 안전한 단일 타깃 빌드
+docker buildx build --platform linux/amd64 -t your-image:tag --push .
+```
+
+## 🔧 실전 코드: CI에서 아키텍처 강제하기
+
+`GitHub Actions` 기준으로 amd64 빌드를 고정하면, 로컬 장비 아키텍처와 무관하게 동일한 이미지를 배포할 수 있습니다.
+
+```yaml
+name: build-and-push
+on:
+  push:
+    branches: [main]
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/your-org/almighty-api:${{ github.sha }}
+```
+
+## ✅ 운영 검증 시나리오
+
+배포 전에 아래 순서로 확인하면 대부분의 아키텍처 이슈를 사전 차단할 수 있습니다.
+
+```bash
+# 1) 서버 CPU 확인 (x86_64 기대)
+uname -m
+
+# 2) 레지스트리 이미지 매니페스트 확인
+docker manifest inspect ghcr.io/your-org/almighty-api:$GIT_SHA
+
+# 3) 임시 실행 확인
+docker run --rm ghcr.io/your-org/almighty-api:$GIT_SHA java -version
+```
+
+## ✨ 마무리
+
+당시에는 단순히 "플랫폼 옵션 하나 빠졌네" 수준으로 끝낼 수도 있었지만, 같은 문제는 팀/환경이 바뀌면 언제든 다시 발생할 수 있습니다. 그래서 Almighty에서는 "문제를 고친 커밋"보다 "문제가 재발하지 않는 규칙"을 더 중요한 산출물로 남기고 있습니다.  
+비슷한 환경(맥 개발 + 리눅스 배포)이라면, 오늘 바로 `--platform` 고정부터 적용해보세요.
