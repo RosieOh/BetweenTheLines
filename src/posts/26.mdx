@@ -1,0 +1,99 @@
+---
+title: '[StoryG 심화] Snapshot 검증 SQL과 품질 게이트: PRE/POST 데이터 신뢰도 올리기'
+date: '2026-04-14'
+author: '오태훈'
+description: 'PRE/POST 응답 Snapshot을 운영에서 신뢰할 수 있도록 만드는 SQL 검증과 품질 게이트 설계를 정리합니다.'
+category: 'SpringBoot'
+tags: ['Snapshot', 'SQL', '데이터품질', 'StoryG', '설문']
+readTime: '9분'
+thumbnail: 'architecture'
+series: 'storyg-realworld-series'
+seriesOrder: 5
+seriesLabel: '심화편 2'
+---
+
+# [StoryG 심화] Snapshot 검증 SQL과 품질 게이트
+
+Snapshot 설계를 적용한 뒤에도 중요한 질문이 남습니다. "이 데이터를 정말 믿어도 되는가?"  
+StoryG에서는 PRE/POST 저장 로직 도입 후 검증 쿼리와 품질 게이트를 운영 루틴으로 만들었습니다.
+
+## 🚨 문제
+
+- 기능은 동작하지만 데이터 품질 회귀를 빨리 감지하기 어려움
+- 특정 배포 이후 `response_context` 누락 가능성 우려
+- 리포트팀이 데이터 신뢰 여부를 수동으로 확인해야 하는 부담
+
+## 🧪 재현
+
+운영 배포 후 다음 징후가 나타나면 위험 신호입니다.
+
+- PRE/POST 응답 수 불균형
+- `isPrePost=true` 질문인데 `response_context`가 `NULL`
+- 코스별 특정 구간에서만 전후 데이터 누락
+
+## 🔍 원인 분석
+
+Snapshot 품질은 저장 로직만으로 보장되지 않습니다.
+
+- 템플릿 변경
+- 프론트 요청 누락
+- 서비스 리팩터링
+
+이 세 가지가 언제든 품질을 깨뜨릴 수 있습니다.
+
+## 🛠️ 해결
+
+### 1) 핵심 검증 SQL 고정
+
+```sql
+SELECT a.question_id, a.response_context, COUNT(*) AS cnt
+FROM tbl_answers a
+JOIN tbl_survey_responses r ON a.survey_response_id = r.id
+WHERE r.course_id = :courseId
+  AND r.is_satisfaction = 1
+GROUP BY a.question_id, a.response_context
+ORDER BY a.question_id, a.response_context;
+```
+
+### 2) 누락 탐지 SQL
+
+```sql
+SELECT a.question_id, COUNT(*) AS null_count
+FROM tbl_answers a
+JOIN tbl_survey_responses r ON a.survey_response_id = r.id
+WHERE r.is_satisfaction = 1
+  AND a.response_context IS NULL
+GROUP BY a.question_id
+HAVING COUNT(*) > 0;
+```
+
+### 3) 품질 게이트 기준
+
+- `isPrePost=true` 문항의 `NULL response_context` 비율 0% 유지
+- PRE/POST 개수 편차 임계치 초과 시 알림
+- 배포 후 샘플 코스 자동 점검
+
+## ✅ 검증
+
+- 배포 직후 품질 이상을 조기 탐지 가능
+- 리포트팀/분석팀의 수동 확인 시간 감소
+- "데이터가 맞다"를 숫자로 설명할 수 있게 됨
+
+## 📌 교훈
+
+1. 데이터 기능은 구현으로 끝나지 않고 검증 체계까지 있어야 완성됩니다.
+2. 품질 게이트는 장애 대응보다 훨씬 저렴합니다.
+3. SQL 검증은 운영에서 가장 빠르고 확실한 안전장치입니다.
+
+## ♻️ 재사용 체크리스트
+
+- [ ] 핵심 품질 SQL을 운영 runbook에 고정
+- [ ] 배포 파이프라인 후처리 검증 단계 추가
+- [ ] 임계치 초과 시 Slack/알림 연동
+- [ ] 월간 데이터 품질 리포트 발행
+
+## 🔗 관련 글 / 다음 글
+
+- 기본편: [SnapShot 설계: PRE/POST 응답 비교 데이터 모델](/post/23)
+- 연계편: [AI 프롬프트 엔지니어링: aiResult 적용기](/post/22)
+- 연계편: [Nginx 트러블슈팅: 502/405 복구](/post/24)
