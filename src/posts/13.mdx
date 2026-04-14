@@ -1,0 +1,98 @@
+---
+title: '[Almighty 실전] Criteria 기반 채점 구조 전환기: 스키마 변경 없이 기준 늘리기'
+date: '2026-04-14'
+author: '오태훈'
+description: '고정 컬럼 기반 점수 구조를 Criteria 기반으로 전환하며 얻은 확장성과 운영 이점을 정리합니다.'
+category: 'SpringBoot'
+tags: ['채점엔진', 'DB설계', 'Criteria', '확장성', 'Almighty']
+readTime: '10분'
+thumbnail: 'architecture'
+---
+
+# [Almighty 실전] Criteria 기반 채점 구조 전환기
+
+처음에는 점수 컬럼을 고정 필드로 설계하면 단순해 보입니다. 하지만 모듈이 늘고 평가 기준이 자주 바뀌면, 고정 컬럼은 가장 먼저 발목을 잡는 구조가 됩니다.
+
+특히 평가 정책이 분기마다 바뀌는 제품에서는, 스키마 변경이 곧 배포 리스크로 이어집니다. 그래서 이번 전환은 "기능 개선"보다 "운영 탄력성 확보"에 더 가까운 작업이었습니다.
+
+## 🚨 문제
+
+- 모듈마다 평가 기준이 다른데 점수 테이블은 고정 컬럼 구조
+- 기준이 바뀔 때마다 스키마 변경/배포 필요
+- 과거 채점 규칙과 현재 규칙을 비교하기 어려움
+
+## 🧪 재현
+
+- DIG에 새로운 평가 항목 추가
+- 기존 스키마로 표현이 어려워 컬럼 추가 필요
+- API/쿼리/리포트까지 연쇄 수정 발생
+
+## 🔍 원인 분석
+
+문제는 점수 데이터의 성질을 잘못 모델링한 것이었습니다.
+
+- 점수는 "고정 구조"가 아니라 "가변 기준" 데이터
+- 그럼에도 열(column) 중심으로 강제 표현
+
+## 🛠️ 해결
+
+채점 구조를 3계층으로 분리했습니다.
+
+1. `TBL_SCORING_CRITERIA` (기준 정의)
+2. `TBL_SCORING_RESULT` (제출물 단위 결과)
+3. `TBL_SCORING_DETAIL` (기준별 상세 점수)
+
+그리고 기준/규칙 버전을 별도 테이블로 관리했습니다.
+
+## 🔧 실전 코드: Criteria 조회 + 점수 저장
+
+```java
+List<ScoringCriteria> criteria = criteriaRepository
+    .findAllByCategoryAndVersion(task.getCategory(), activeCriteriaVersionId);
+
+ScoringResult result = scoringResultRepository.save(
+    ScoringResult.create(submissionId, ruleVersionId, rawScore, aciIndex, finalScore)
+);
+
+for (ScoringCriteria c : criteria) {
+    BigDecimal score = scoreCalculator.calculate(c, submissionPayload);
+    scoringDetailRepository.save(
+        ScoringDetail.of(result.getScoringResultId(), c.getCriteriaId(), score)
+    );
+}
+```
+
+## 🔧 실전 SQL: Criteria 기반 조회
+
+```sql
+SELECT r.SUBMISSION_ID,
+       c.CRITERIA_CODE,
+       d.SCORE
+FROM TBL_SCORING_RESULT r
+JOIN TBL_SCORING_DETAIL d ON r.SCORING_RESULT_ID = d.SCORING_RESULT_ID
+JOIN TBL_SCORING_CRITERIA c ON d.CRITERIA_ID = c.CRITERIA_ID
+WHERE r.SUBMISSION_ID = :submissionId;
+```
+
+## ✅ 검증
+
+- 새 평가 기준 추가 시 DDL 변경 없이 데이터 레벨에서 반영 가능
+- 모듈별 상이한 기준을 유연하게 수용
+- 과거 버전 기준으로 재현/비교 가능
+
+## 📌 교훈
+
+1. 평가 시스템은 "버전 관리 가능성"이 핵심 비기능 요구사항입니다.
+2. 고정 컬럼은 초기 속도를 올리지만 장기 확장성은 낮춥니다.
+3. 기준 정의와 결과 저장을 분리해야 운영 실험(A/B, 롤백)이 쉬워집니다.
+
+## ♻️ 재사용 설계 원칙
+
+- 정의(Definition)와 결과(Result)를 분리하라
+- 결과는 immutable하게 기록하라
+- 버전은 옵션이 아니라 필수다
+
+## ✨ 마무리
+
+채점 시스템은 결국 "시간에 따라 바뀌는 정책"을 다루는 문제입니다. 그렇다면 처음부터 변경 가능성을 전제로 설계해야 합니다.  
+Almighty에서 얻은 결론은 명확했습니다. 점수 구조는 고정이 아니라, 버전 가능한 데이터 모델이어야 합니다.
