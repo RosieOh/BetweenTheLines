@@ -96,7 +96,7 @@ const ContactModal = ({ open, onClose }: ContactModalProps) => {
               <div className="flex items-start justify-between p-6 pb-5 border-b border-border">
                 <div>
                   <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground mb-1">
-                    Hyperwise Studio
+                    Between the Lines
                   </p>
                   <h2 className="text-[20px] font-extrabold text-foreground">프로젝트 문의</h2>
                 </div>
