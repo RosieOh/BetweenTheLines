@@ -1,0 +1,142 @@
+---
+title: 'Vite + React 템플릿 CLI 만들기: create-rosie-app 개발기'
+date: '2025-06-14'
+author: '오태훈'
+description: '귀차니즘이 만든 발상, 편리함으로 오픈소스 개발까지. 나만의 CLI 템플릿 도구를 만든 과정을 공유합니다.'
+category: 'Frontend'
+tags: ['React', 'Vite', 'TypeScript', 'CLI', '오픈소스']
+readTime: '7분'
+thumbnail: 'cicd'
+---
+
+안녕하세요! 오늘은 제가 직접 만든 Vite + React + Tailwind CSS 템플릿 CLI, **create-rosie-app** 개발 경험을 공유하려고 해요. 현업에서 자주 쓰는 세팅을 한 번에 뚝딱! 자동화하고 싶은 분들께 도움이 되길 바라며, 시행착오와 깨달음까지 모두 담아봅니다. 😎
+
+---
+
+## 🧐 왜 직접 CLI를 만들었나?
+
+> "매번 똑같은 세팅, 귀찮지 않으세요?"
+
+기존의 `create-react-app`이나 Vite 기본 템플릿도 좋지만, 실제로는 Tailwind, React Query, Zustand, ESLint/Prettier 등 매번 추가로 설치하고 설정해야 했어요. 그래서 **내가 자주 쓰는 조합을 한 번에 세팅해주는 CLI**를 만들기로 결심했습니다! 💡
+
+---
+
+## 🏗️ 템플릿 구조 설계
+
+처음엔 어떤 파일이 어디에 있어야 할지 고민이 많았어요. 아래처럼 정리했습니다:
+
+```
+base/
+  package.json
+  postcss.config.js
+  tailwind.config.js
+  vite.config.ts
+  index.html
+  tsconfig.json
+  tsconfig.node.json
+  .prettierrc
+  .eslintrc.cjs
+  src/
+    App.tsx
+    main.tsx
+    index.css
+    ...
+```
+
+- ⚙️ **설정 파일들은 루트에**
+- 🗂️ **소스 코드는 src/에**
+- Tailwind, PostCSS, Vite, TypeScript 등 모든 설정을 미리 세팅!
+
+---
+
+## 🛠️ CLI 구현: 템플릿 복사와 옵션 처리
+
+CLI의 핵심은 템플릿을 복사하고, 옵션에 따라 파일/의존성을 추가/제거하는 것! 아래는 주요 복사 로직입니다.
+
+```js
+// 복사할 루트 파일 목록
+const filesToCopy = [
+  "postcss.config.js",
+  "tailwind.config.js",
+  "vite.config.ts",
+  "index.html",
+  "package.json",
+  "tsconfig.json",
+  "tsconfig.node.json",
+  ".prettierrc",
+  ".eslintrc.cjs"
+];
+
+// 루트 파일 복사
+for (const file of filesToCopy) {
+  const srcPath = path.join(templateDir, file);
+  if (await fs.pathExists(srcPath)) {
+    await fs.copy(srcPath, path.join(targetDir, file));
+  }
+}
+
+// src 폴더 복사
+await fs.copy(
+  path.join(templateDir, "src"),
+  path.join(targetDir, "src")
+);
+```
+
+이렇게 하면, 템플릿의 설정 파일들은 프로젝트 루트로, 소스 코드는 src/로 정확히 복사됩니다. (깔끔!)
+
+---
+
+## 🎨 Tailwind CSS 적용과 문제 해결기
+
+처음엔 템플릿을 통째로 복사하는 방식(`fs.copy(templateDir, targetDir)`)을 썼는데, 이 경우 설정 파일들이 잘못된 위치에 복사되거나, src/ 내부에 src/가 중첩되는 문제가 있었습니다. 😱
+
+### ❌ 문제 원인
+- postcss.config.js, tailwind.config.js 등 설정 파일이 루트에 없으면 Tailwind가 동작하지 않음
+- src/index.css가 main.tsx에서 import되지 않으면 스타일이 적용되지 않음
+
+### ✅ 해결 방법
+- 복사 로직을 위와 같이 수정하여, 설정 파일은 루트로, src/는 src/로 복사!
+- .npmignore로 node_modules, .git 등 불필요한 파일은 배포에서 제외
+
+> **Tip!**
+> npm pack으로 실제 배포될 파일을 미리 점검하면 실수 방지에 좋아요.
+
+---
+
+## 📦 npm 배포와 Hard Link 에러 (멘붕 주의)
+
+npm에 배포할 때 아래와 같은 에러가 발생했습니다.
+
+```
+npm error code E415
+npm error 415 Unsupported Media Type - PUT https://registry.npmjs.org/create-rosie-app - Hard link is not allowed
+```
+
+### 🧐 원인
+- node_modules 등 하드링크가 포함된 파일이 패키지에 들어가면 npm에서 거부!
+
+### 🛠️ 해결 방법
+- .npmignore에 node_modules, .git, .DS_Store, package-lock.json 등 불필요한 파일을 모두 추가
+- npm pack으로 실제 배포될 파일을 미리 점검
+
+---
+
+## ✨ 실제로 써보며 느낀 점
+
+- 템플릿 구조와 복사 로직이 명확해야, 새 프로젝트에서 바로 개발을 시작할 수 있다.
+- Tailwind, ESLint, Prettier 등 자주 쓰는 도구를 미리 세팅해두면 생산성이 크게 올라간다. 🚀
+- npm 배포 시 .npmignore 관리가 매우 중요하다.
+- CLI를 직접 만들어보면, 실제로 현업에서 필요한 자동화 포인트를 많이 발견할 수 있다.
+- **무엇보다, 직접 만들어보면 시행착오에서 배우는 게 정말 많다!**
+
+---
+
+## 📝 마치며
+
+이번 경험을 통해 템플릿 설계, CLI 자동화, npm 배포, 그리고 문제 해결까지 다양한 실전 노하우를 쌓을 수 있었습니다. 앞으로도 자주 쓰는 개발 환경은 직접 템플릿화해서, 더 빠르고 효율적으로 프로젝트를 시작할 계획입니다.
+
+혹시 비슷한 고민을 하고 계신 분이 있다면, 이 글이 도움이 되길 바랍니다! 🙌
+
+---
+
+**읽어주셔서 감사합니다! 궁금한 점이나 피드백은 언제든 댓글로 남겨주세요.** 😊 
