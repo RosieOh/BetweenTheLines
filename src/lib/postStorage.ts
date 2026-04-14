@@ -1,13 +1,13 @@
 import { samplePosts } from "@/data/posts";
 import type { PostData } from "@/data/posts";
 
-const POSTS_KEY = "hyperwise_admin_posts";
-const AUTH_KEY = "hyperwise_admin_auth";
+const POSTS_KEY = "rosie_blog_posts";
+const AUTH_KEY = "rosie_blog_auth";
 // NOTE: frontend-only demo — no real access control
-const ADMIN_PASSWORD = "hyperwise2026";
+const ADMIN_PASSWORD = "rosie2025";
 
-const INQUIRIES_KEY = "hyperwise_inquiries";
-const SUBSCRIBERS_KEY = "hyperwise_subscribers";
+const INQUIRIES_KEY = "rosie_blog_inquiries";
+const SUBSCRIBERS_KEY = "rosie_blog_subscribers";
 
 // ── Storage CRUD ──────────────────────────────────────────
 
@@ -22,6 +22,11 @@ export function getStoredPosts(): PostData[] {
 
 export function getAllPosts(): PostData[] {
   return [...samplePosts, ...getStoredPosts()];
+}
+
+/** 공개용: draft 제외 */
+export function getPublishedPosts(): PostData[] {
+  return getAllPosts().filter((p) => p.status !== "draft");
 }
 
 export function savePost(post: PostData): void {
@@ -94,7 +99,7 @@ export function getInquiries(): Inquiry[] {
 export function saveSubscriber(email: string): boolean {
   try {
     const stored: string[] = JSON.parse(localStorage.getItem(SUBSCRIBERS_KEY) || "[]");
-    if (stored.includes(email)) return false; // already subscribed
+    if (stored.includes(email)) return false;
     stored.push(email);
     localStorage.setItem(SUBSCRIBERS_KEY, JSON.stringify(stored));
     return true;
@@ -109,4 +114,18 @@ export function getSubscribers(): string[] {
   } catch {
     return [];
   }
+}
+
+export function deleteInquiry(id: string): void {
+  try {
+    const stored = getInquiries().filter((i) => i.id !== id);
+    localStorage.setItem(INQUIRIES_KEY, JSON.stringify(stored));
+  } catch {}
+}
+
+export function deleteSubscriber(email: string): void {
+  try {
+    const stored = getSubscribers().filter((e) => e !== email);
+    localStorage.setItem(SUBSCRIBERS_KEY, JSON.stringify(stored));
+  } catch {}
 }
