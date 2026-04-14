@@ -1,5 +1,5 @@
 ---
-title: '[Almighty 실전] Submission 공통화 리팩터링: 중복 스키마를 걷어내고 확장성을 얻다'
+title: '[Almighty 프로젝트] Submission 공통화 리팩터링: 중복 스키마를 걷어내고 확장성을 얻다'
 date: '2026-04-14'
 author: '오태훈'
 description: '모듈별 제출 테이블 중복을 공통 Submission + 확장 테이블 구조로 바꾼 설계 기록입니다.'
@@ -9,7 +9,7 @@ readTime: '10분'
 thumbnail: 'architecture'
 ---
 
-# [Almighty 실전] Submission 공통화 리팩터링
+# [Almighty 프로젝트] Submission 공통화 리팩터링
 
 PPS, DIG, GCC, WFA를 운영하다 보니 제출 테이블이 모듈별로 분화되면서 공통 필드 중복이 커졌습니다. 결국 쿼리 복잡도와 유지보수 비용이 급증했고, `TBL_SUBMISSION` 공통화로 구조를 재정비했습니다.
 

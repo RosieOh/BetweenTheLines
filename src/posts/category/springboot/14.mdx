@@ -1,5 +1,5 @@
 ---
-title: '[Almighty 실전] Trap Bank 아키텍처: 정책 저장소와 적용 이력을 분리한 이유'
+title: '[Almighty 프로젝트] Trap Bank 아키텍처: 정책 저장소와 적용 이력을 분리한 이유'
 date: '2026-04-14'
 author: '오태훈'
 description: 'Trap 시나리오를 Task 종속 구조에서 정책 저장소 구조로 전환한 배경과 효과를 정리합니다.'
@@ -9,7 +9,7 @@ readTime: '8분'
 thumbnail: 'architecture'
 ---
 
-# [Almighty 실전] Trap Bank 아키텍처 설계기
+# [Almighty 프로젝트] Trap Bank 아키텍처 설계기
 
 함정(Trap) 시나리오는 본질적으로 "정책"입니다. 그런데 초기 설계에서 Trap을 Task에 강하게 묶어두면 재사용성과 버전 관리가 어렵습니다. Almighty는 이 문제를 겪고 구조를 분리했습니다.
 

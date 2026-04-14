@@ -1,5 +1,5 @@
 ---
-title: '[Almighty 실전] AI 이미지 API 실패 패턴 정리: 200 OK 함정과 프론트 방어 코드'
+title: '[Almighty 프로젝트] AI 이미지 API 실패 패턴 정리: 200 OK 함정과 프론트 방어 코드'
 date: '2026-04-14'
 author: '오태훈'
 description: 'HTTP 상태코드만 믿으면 놓치는 AI API 실패 패턴과 프론트엔드 방어 전략을 정리합니다.'
@@ -9,7 +9,7 @@ readTime: '9분'
 thumbnail: 'ai'
 ---
 
-# [Almighty 실전] AI 이미지 API 실패 패턴 정리
+# [Almighty 프로젝트] AI 이미지 API 실패 패턴 정리
 
 AI API 연동에서 가장 위험한 착각은 "HTTP 200이면 성공"이라는 생각입니다. Almighty 이미지 기능에서 실제로 `200 OK` + `business fail` 패턴을 경험했고, 프론트 방어 코드를 재정의했습니다.
 

@@ -1,5 +1,5 @@
 ---
-title: '[StoryG 실전] 만족도 설문 PRE/POST 분리 설계: response_context를 살린 방법'
+title: '[StoryG 프로젝트] 만족도 설문 PRE/POST 분리 설계: response_context를 살린 방법'
 date: '2026-04-14'
 author: '오태훈'
 description: '만족도 설문에서 동일 질문의 사전/사후 답변을 안정적으로 분리 저장한 설계 과정을 기록합니다.'
@@ -9,7 +9,7 @@ readTime: '10분'
 thumbnail: 'architecture'
 ---
 
-# [StoryG 실전] 만족도 설문 PRE/POST 분리 설계
+# [StoryG 프로젝트] 만족도 설문 PRE/POST 분리 설계
 
 같은 질문을 수업 전/후에 한 번씩 받으면, 저장은 단순해 보이지만 분석 단계에서 큰 차이가 납니다. StoryG에서는 `response_context`가 계속 `NULL`로 저장되는 문제를 겪었고, 설계를 다시 정리했습니다.
 
