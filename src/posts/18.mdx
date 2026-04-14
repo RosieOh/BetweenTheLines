@@ -1,0 +1,100 @@
+---
+title: '[StoryG 실전] 반별 설문 입장 토글 설계: classroomId 단위 제어가 필요한 이유'
+date: '2026-04-14'
+author: '오태훈'
+description: '피드백/만족도 설문을 반 단위로 개폐하는 토글 API 설계와 프론트 연동 포인트를 정리합니다.'
+category: 'SpringBoot'
+tags: ['설문', '토글', '교육플랫폼', 'StoryG', 'API설계']
+readTime: '8분'
+thumbnail: 'architecture'
+---
+
+# [StoryG 실전] 반별 설문 입장 토글 설계
+
+교육 현장에서는 같은 과정이라도 반마다 진행 속도가 다릅니다. 그래서 StoryG에서는 "과정 전체 오픈"이 아니라 `classroomId` 단위 제어를 지원하게 됐습니다.
+
+## 🚨 문제
+
+- A반은 설문 시작, B반은 아직 수업 전인 상황이 자주 발생
+- 과정 단위 오픈만 있으면 일부 반은 너무 일찍 설문에 접근
+- 운영자가 반마다 수동 안내를 해야 해서 관리 비용 증가
+
+## 🧪 재현
+
+- 과정 시작 후 반별 진행이 어긋날 때
+- 특정 반만 설문을 열어야 할 때
+- 전체 오픈/닫기만 지원하면 요구사항 충족 불가
+
+## 🔍 원인 분석
+
+도메인 단위가 잘못 잡혀 있었습니다.
+
+- 기존 제어 단위: course/program 중심
+- 실제 운영 단위: class(반) 중심
+
+즉 데이터 모델과 운영 단위가 불일치했습니다.
+
+## 🛠️ 해결
+
+반 단위 토글 API를 도입했습니다.
+
+### 피드백 설문 상태 조회
+
+```http
+GET /surveys/feedback/programs/{programId}/class-entry-statuses
+```
+
+### 피드백 설문 상태 토글
+
+```http
+PATCH /surveys/feedback/programs/{programId}/classes/{classroomId}/entry-status
+```
+
+### 만족도 설문 상태 토글
+
+```http
+PATCH /surveys/satisfaction/courses/{courseId}/classes/{classroomId}/entry-status
+```
+
+응답 예시:
+
+```json
+{
+  "success": true,
+  "message": "입장이 열렸습니다",
+  "data": {
+    "classroomId": 1,
+    "grade": 1,
+    "classNumber": 1,
+    "isEntryOpen": true
+  }
+}
+```
+
+## ✅ 검증
+
+- 반별 진행 속도에 맞춰 설문 개폐 가능
+- 강사 화면에서 토글 즉시 반영
+- 설문 민원(왜 아직 못 들어가요?) 감소
+
+## 📌 교훈
+
+1. 교육 서비스는 "사용자 유형"보다 "학급 운영 단위"가 더 중요할 때가 많습니다.
+2. 토글 API는 단순해 보여도 운영 부담을 크게 줄입니다.
+3. 상태 조회 API와 토글 API를 분리하면 프론트 구현이 안정적입니다.
+
+## ♻️ 프론트 연동 팁
+
+```ts
+async function toggleFeedback(programId: number, classroomId: number) {
+  const res = await fetch(`/api/v1/surveys/feedback/programs/${programId}/classes/${classroomId}/entry-status`, {
+    method: "PATCH",
+  });
+  const json = await res.json();
+  return json.data.isEntryOpen as boolean;
+}
+```
+
+- [ ] 토글 중 중복 클릭 방지(disabled)
+- [ ] 응답 `data.isEntryOpen`으로 즉시 UI 반영
+- [ ] 실패 시 이전 상태 롤백 처리
