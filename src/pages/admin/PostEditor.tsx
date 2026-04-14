@@ -1,15 +1,17 @@
-import { useState, useEffect } from "react";
-import { useNavigate, useParams, Link } from "react-router-dom";
+import { useState, useEffect, useRef } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowLeft, Eye, EyeOff, Save, AlertTriangle } from "lucide-react";
+import { Eye, EyeOff, Save, Download, FileText, RefreshCw } from "lucide-react";
 import {
   isAuthenticated,
   getAllPosts,
   savePost,
   generateId,
 } from "@/lib/postStorage";
+import AdminLayout from "@/components/blog/AdminLayout";
 import type { PostData } from "@/data/posts";
+import { categoryList } from "@/lib/blogConfig";
 
 import thumbArchitecture from "@/assets/thumb-architecture.jpg";
 import thumbAiReview from "@/assets/thumb-ai-review.jpg";
@@ -25,8 +27,6 @@ const THUMBNAIL_OPTIONS = [
   { label: "CI/CD", src: thumbCicd },
 ];
 
-const CATEGORIES = ["PPS", "DIG", "GCC", "WFA", "AES"] as const;
-
 const today = () => {
   const d = new Date();
   return `${d.getFullYear()}. ${String(d.getMonth() + 1).padStart(2, "0")}. ${String(d.getDate()).padStart(2, "0")}.`;
@@ -35,16 +35,14 @@ const today = () => {
 const emptyPost = (): Omit<PostData, "id"> => ({
   title: "",
   excerpt: "",
-  category: "PPS",
+  category: categoryList[0]?.key ?? "",
   author: "",
   date: today(),
   readTime: "5분",
   thumbnail: THUMBNAIL_OPTIONS[0].src,
   tags: [],
-  aciScore: 0,
-  hasAesPenalty: false,
-  aciBreakdown: { pps: 0, dig: 0, gcc: 0, wfa: 0 },
   content: "",
+  status: "published",
 });
 
 const PostEditor = () => {
@@ -58,6 +56,36 @@ const PostEditor = () => {
   const [preview, setPreview] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof PostData | "tagInput", string>>>({});
   const [saved, setSaved] = useState(false);
+  const handleSaveRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    handleSaveRef.current = () => {
+      const e = validate();
+      if (Object.keys(e).length > 0) { setErrors(e); return; }
+      const thumb = customThumb.trim() || form.thumbnail;
+      const post: PostData = { id: isEdit && id ? id : generateId(), ...form, thumbnail: thumb };
+      savePost(post);
+      setSaved(true);
+      setTimeout(() => { navigate("/admin/dashboard"); }, 800);
+    };
+  });
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        handleSaveRef.current();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  const calcReadTime = () => {
+    const words = form.content.trim().split(/\s+/).filter(Boolean).length;
+    const minutes = Math.max(1, Math.round(words / 200));
+    setForm((f) => ({ ...f, readTime: `${minutes}분` }));
+  };
 
   useEffect(() => {
     if (!isAuthenticated()) { navigate("/admin"); return; }
@@ -66,7 +94,6 @@ const PostEditor = () => {
       if (post) {
         const { id: _id, ...rest } = post;
         setForm(rest);
-        // If thumbnail not in presets, treat as custom URL
         const isPreset = THUMBNAIL_OPTIONS.some((t) => t.src === post.thumbnail);
         if (!isPreset) setCustomThumb(post.thumbnail);
       } else {
@@ -74,19 +101,6 @@ const PostEditor = () => {
       }
     }
   }, [id, isEdit, navigate]);
-
-  // ACI total
-  const aciTotal =
-    form.aciBreakdown.pps +
-    form.aciBreakdown.dig +
-    form.aciBreakdown.gcc +
-    form.aciBreakdown.wfa;
-
-  const setBreakdown = (key: keyof PostData["aciBreakdown"], val: number) => {
-    const clamped = Math.min(250, Math.max(0, val));
-    const next = { ...form.aciBreakdown, [key]: clamped };
-    setForm((f) => ({ ...f, aciBreakdown: next, aciScore: next.pps + next.dig + next.gcc + next.wfa }));
-  };
 
   const addTag = () => {
     const t = tagInput.trim();
@@ -109,25 +123,34 @@ const PostEditor = () => {
     return e;
   };
 
-  const handleSave = () => {
-    const e = validate();
-    if (Object.keys(e).length > 0) { setErrors(e); return; }
+  const handleSave = () => handleSaveRef.current();
 
-    const thumb = customThumb.trim() || form.thumbnail;
-    const post: PostData = { id: isEdit && id ? id : generateId(), ...form, thumbnail: thumb };
-    savePost(post);
-    setSaved(true);
-    setTimeout(() => {
-      navigate("/admin/dashboard");
-    }, 800);
+  const handleExportMdx = () => {
+    const slug = (form.title || "untitled").toLowerCase().replace(/\s+/g, "-").replace(/[^\w-]/g, "");
+    const isoDate = new Date().toISOString().split("T")[0];
+    const mdx = [
+      "---",
+      `title: '${form.title}'`,
+      `date: '${isoDate}'`,
+      `description: '${form.excerpt}'`,
+      `author: '${form.author}'`,
+      `category: '${form.category}'`,
+      `tags: [${form.tags.map((t) => `'${t}'`).join(", ")}]`,
+      `readTime: '${form.readTime}'`,
+      `thumbnail: 'architecture'`,
+      "---",
+      "",
+      form.content,
+    ].join("\n");
+
+    const blob = new Blob([mdx], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${slug}.mdx`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
-
-  const pillars: { key: keyof PostData["aciBreakdown"]; label: string; color: string }[] = [
-    { key: "pps", label: "PPS", color: "bg-accent" },
-    { key: "dig", label: "DIG", color: "bg-emerald-500" },
-    { key: "gcc", label: "GCC", color: "bg-amber-500" },
-    { key: "wfa", label: "WFA", color: "bg-violet-500" },
-  ];
 
   const Field = ({
     label, id: fid, required, error, children,
@@ -147,60 +170,71 @@ const PostEditor = () => {
     }`;
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur-sm">
-        <div className="container flex items-center justify-between h-14">
-          <div className="flex items-center gap-3">
-            <Link
-              to="/admin/dashboard"
-              className="flex items-center gap-1.5 text-[13px] text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <ArrowLeft size={14} />
-              대시보드
-            </Link>
-            <span className="text-muted-foreground">/</span>
-            <span className="text-[13px] font-semibold text-foreground">
-              {isEdit ? "게시글 수정" : "새 게시글"}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPreview(!preview)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-border text-[13px] font-medium text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {preview ? <EyeOff size={14} /> : <Eye size={14} />}
-              {preview ? "편집" : "미리보기"}
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saved}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-[13px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
-            >
-              <Save size={14} />
-              {saved ? "저장됨 ✓" : "저장"}
-            </button>
-          </div>
+    <AdminLayout>
+      {/* Page header */}
+      <div className="px-8 pt-8 pb-4 flex items-center justify-between border-b border-border mb-6">
+        <div>
+          <h1 className="text-[20px] font-extrabold text-foreground">
+            {isEdit ? "게시글 수정" : "새 게시글"}
+          </h1>
+          <p className="text-[12px] text-muted-foreground mt-0.5">
+            {isEdit ? "기존 게시글을 수정합니다." : "새 게시글을 작성합니다."}
+          </p>
         </div>
-      </header>
+        <div className="flex items-center gap-2">
+          {/* Draft / Published toggle */}
+          <button
+            onClick={() => setForm((f) => ({ ...f, status: f.status === "draft" ? "published" : "draft" }))}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-[13px] font-medium transition-colors ${
+              form.status === "draft"
+                ? "border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400"
+                : "border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400"
+            }`}
+          >
+            <FileText size={14} />
+            {form.status === "draft" ? "임시저장" : "공개"}
+          </button>
+          <button
+            onClick={() => setPreview(!preview)}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-border text-[13px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {preview ? <EyeOff size={14} /> : <Eye size={14} />}
+            {preview ? "편집" : "미리보기"}
+          </button>
+          <button
+            onClick={handleExportMdx}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-border text-[13px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+            title="MDX 파일로 다운로드"
+          >
+            <Download size={14} />
+            MDX
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saved}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-[13px] font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
+          >
+            <Save size={14} />
+            {saved ? "저장됨 ✓" : "저장"}
+          </button>
+        </div>
+      </div>
 
-      <main className="container max-w-5xl py-8">
+      <main className="px-8 max-w-5xl py-2">
         <div className="grid lg:grid-cols-[1fr_320px] gap-8">
           {/* Left: main form */}
           <div className="flex flex-col gap-6">
-            {/* Title */}
             <Field label="제목" id="title" required error={errors.title}>
               <input
                 id="title"
                 type="text"
                 value={form.title}
                 onChange={(e) => { setForm((f) => ({ ...f, title: e.target.value })); setErrors((p) => ({ ...p, title: undefined })); }}
-                placeholder="아티클 제목을 입력하세요"
+                placeholder="게시글 제목을 입력하세요"
                 className={inputCls(errors.title)}
               />
             </Field>
 
-            {/* Excerpt */}
             <Field label="요약" id="excerpt" required error={errors.excerpt}>
               <textarea
                 id="excerpt"
@@ -212,7 +246,6 @@ const PostEditor = () => {
               />
             </Field>
 
-            {/* Content */}
             <Field label="본문 (Markdown)" id="content" required error={errors.content}>
               {preview ? (
                 <div className="min-h-[400px] rounded-xl border border-border bg-background p-5 prose prose-sm max-w-none">
@@ -278,7 +311,6 @@ const PostEditor = () => {
 
           {/* Right: meta sidebar */}
           <div className="flex flex-col gap-5">
-            {/* Category */}
             <div className="bg-secondary rounded-2xl border border-border p-5">
               <p className="text-[12px] font-bold uppercase tracking-wider text-muted-foreground mb-3">
                 기본 정보
@@ -291,8 +323,8 @@ const PostEditor = () => {
                     onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
                     className={inputCls()}
                   >
-                    {CATEGORIES.map((c) => (
-                      <option key={c} value={c}>{c}</option>
+                    {categoryList.map((c) => (
+                      <option key={c.key} value={c.key}>{c.label}</option>
                     ))}
                   </select>
                 </Field>
@@ -309,73 +341,26 @@ const PostEditor = () => {
                 </Field>
 
                 <Field label="읽기 시간" id="readTime">
-                  <input
-                    id="readTime"
-                    type="text"
-                    value={form.readTime}
-                    onChange={(e) => setForm((f) => ({ ...f, readTime: e.target.value }))}
-                    placeholder="예: 8분"
-                    className={inputCls()}
-                  />
-                </Field>
-
-                <div className="flex items-center gap-2 mt-1">
-                  <input
-                    id="aesPenalty"
-                    type="checkbox"
-                    checked={form.hasAesPenalty || false}
-                    onChange={(e) => setForm((f) => ({ ...f, hasAesPenalty: e.target.checked }))}
-                    className="w-4 h-4 rounded border-border accent-red-500"
-                  />
-                  <label htmlFor="aesPenalty" className="flex items-center gap-1.5 text-[13px] text-foreground cursor-pointer">
-                    <AlertTriangle size={13} className="text-red-500" />
-                    AES 패널티 적용
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            {/* ACI Breakdown */}
-            <div className="bg-secondary rounded-2xl border border-border p-5">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-[12px] font-bold uppercase tracking-wider text-muted-foreground">
-                  ACI 스코어
-                </p>
-                <span className="text-[18px] font-extrabold text-accent">{aciTotal}</span>
-              </div>
-              <div className="flex flex-col gap-4">
-                {pillars.map((p) => (
-                  <div key={p.key}>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`w-2 h-2 rounded-full ${p.color}`} />
-                        <span className="text-[12px] font-semibold text-muted-foreground">
-                          {p.label}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min={0}
-                          max={250}
-                          value={form.aciBreakdown[p.key]}
-                          onChange={(e) => setBreakdown(p.key, Number(e.target.value))}
-                          className="w-16 h-7 px-2 rounded-lg border border-border bg-background text-[12px] text-foreground text-right focus:outline-none focus:ring-1 focus:ring-accent/40"
-                        />
-                        <span className="text-[11px] text-muted-foreground">/250</span>
-                      </div>
-                    </div>
+                  <div className="flex gap-2">
                     <input
-                      type="range"
-                      min={0}
-                      max={250}
-                      value={form.aciBreakdown[p.key]}
-                      onChange={(e) => setBreakdown(p.key, Number(e.target.value))}
-                      className="w-full h-1.5 appearance-none rounded-full bg-border cursor-pointer accent-current"
-                      style={{ accentColor: p.color === "bg-accent" ? "hsl(var(--accent))" : undefined }}
+                      id="readTime"
+                      type="text"
+                      value={form.readTime}
+                      onChange={(e) => setForm((f) => ({ ...f, readTime: e.target.value }))}
+                      placeholder="예: 8분"
+                      className={inputCls()}
                     />
+                    <button
+                      type="button"
+                      onClick={calcReadTime}
+                      title="본문 글자 수로 자동 계산"
+                      className="flex items-center gap-1 px-3 h-10 rounded-xl border border-border text-[12px] font-medium text-muted-foreground hover:text-foreground whitespace-nowrap transition-colors"
+                    >
+                      <RefreshCw size={12} />
+                      자동
+                    </button>
                   </div>
-                ))}
+                </Field>
               </div>
             </div>
 
@@ -422,7 +407,6 @@ const PostEditor = () => {
               )}
             </div>
 
-            {/* Save (mobile-friendly) */}
             <button
               onClick={handleSave}
               disabled={saved}
@@ -434,7 +418,7 @@ const PostEditor = () => {
           </div>
         </div>
       </main>
-    </div>
+    </AdminLayout>
   );
 };
 
