@@ -107,7 +107,8 @@ const SearchPage = () => {
               <button
                 key={cat}
                 onClick={() => handleCategoryChange(cat)}
-                className={`px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-colors border ${
+                aria-pressed={selectedCategory === cat}
+                className={`px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-colors border whitespace-nowrap ${
                   selectedCategory === cat
                     ? "bg-primary text-primary-foreground border-primary"
                     : "bg-background text-muted-foreground border-border hover:text-foreground hover:border-foreground/30"
@@ -128,7 +129,7 @@ const SearchPage = () => {
 
         {/* Results */}
         {hasSearched && (
-          <div>
+          <div aria-live="polite" aria-atomic="true">
             <div className="flex items-center justify-between mb-4">
               <p className="text-[14px] text-muted-foreground">
                 {results.length > 0 ? (
