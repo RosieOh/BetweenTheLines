@@ -1,0 +1,132 @@
+---
+title: '[Almighty 실전] Redis 연결 실패 회고: 환경 변수 표준화로 재발률 낮추기'
+date: '2026-04-14'
+author: '오태훈'
+description: 'Redis 연결 실패를 단순 인프라 문제가 아닌 설정 일관성 문제로 보고 해결한 실무 기록입니다.'
+category: 'DevOps'
+tags: ['Redis', '환경변수', '운영장애', 'SpringBoot', 'Almighty']
+readTime: '8분'
+thumbnail: 'security'
+---
+
+# [Almighty 실전] Redis 연결 실패 회고
+
+Redis 장애는 종종 "Redis 서버가 죽었다"로 단순화되지만, 실제 운영에서는 설정 체계가 원인인 경우가 많습니다. Almighty에서도 같은 문제를 겪었고, 환경 변수 표준화로 해결했습니다.
+
+한 번은 로컬에서는 완벽히 재현되지 않는데 운영에서만 장애가 반복됐습니다. 그때 깨달은 건 "인프라가 불안정한 게 아니라, 팀의 설정 언어가 통일되지 않았다"는 사실이었습니다.
+
+## 🚨 문제
+
+- 배포 후 캐시/큐 관련 기능 일부 실패
+- 애플리케이션 기동은 되지만 런타임에서 Redis 접근 예외 발생
+- 환경별(local, dev, prod) 설정이 서로 달라 원인 추적이 어려움
+
+## 🧪 재현
+
+1. `.env` 또는 서버 환경 변수에서 Redis host/port 일부 누락
+2. 애플리케이션 기동
+3. Redis를 사용하는 API 호출 시 예외 발생
+
+대표 패턴:
+
+```text
+Unable to connect to Redis
+Connection refused / Unknown host
+```
+
+## 🔍 원인 분석
+
+문제는 Redis 자체가 아니라 "설정 계약(contract) 부재"였습니다.
+
+- 키 이름이 환경별로 다름 (`REDIS_HOST`, `SPRING_REDIS_HOST`, 커스텀 키 혼용)
+- 기본값 정책이 불명확함
+- 배포 스크립트에서 필수 값 검증이 없음
+
+결국 "누락된 설정"이 런타임에서만 드러났습니다.
+
+## 🛠️ 해결
+
+### 1) 키 네이밍 표준화
+
+- `REDIS_HOST`
+- `REDIS_PORT`
+- `REDIS_PASSWORD` (필요 시)
+
+### 2) 애플리케이션 설정 단일 경로화
+
+- 모든 프로파일이 동일한 키를 참조
+- 기본값은 로컬에서만 허용, 운영은 필수값 강제
+
+### 3) 배포 전 사전 검증 스크립트 추가
+
+```bash
+required_vars=(REDIS_HOST REDIS_PORT DB_HOST DB_PORT DB_USER DB_PASSWORD)
+for var in "${required_vars[@]}"; do
+  if [ -z "${!var}" ]; then
+    echo "[ERROR] missing env: $var"
+    exit 1
+  fi
+done
+```
+
+## 🔧 실전 코드: Spring 설정 단일화 예시
+
+운영/개발 프로파일이 서로 다른 키를 보지 않도록, `application.yml`에서 하나의 계약으로 묶는 방식이 안전했습니다.
+
+```yaml
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+```
+
+프로파일 분기에서는 키 이름을 바꾸지 않고 값만 바꾸는 원칙을 적용했습니다.
+
+```yaml
+# application-prod.yml
+spring:
+  data:
+    redis:
+      ssl:
+        enabled: true
+```
+
+## ✅ 운영 검증 시나리오
+
+```bash
+# 앱 기동 전 env 확인
+env | rg "REDIS_|DB_"
+
+# Redis 연결 확인
+redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ping
+
+# 앱 내부 health 확인
+curl -s https://your-domain/actuator/health | jq .
+```
+
+## ✅ 검증
+
+- 배포 전 누락 환경 변수 즉시 탐지
+- Redis 관련 장애 재발 없음
+- 신규 팀원이 와도 동일 방식으로 환경 세팅 가능
+
+## 📌 교훈
+
+1. 환경 변수는 "설정"이 아니라 "운영 계약"입니다.
+2. 필수값 검증은 앱 기동 전에 끝내야 합니다.
+3. 운영 환경일수록 기본값 fallback은 최소화해야 합니다.
+
+## ♻️ 재사용 체크리스트
+
+- [ ] 필수 env 목록 문서화
+- [ ] 배포 스크립트에서 필수 env 검증
+- [ ] local/dev/prod 키 이름 완전 통일
+- [ ] 장애 시 확인 순서(runbook) 정의
+
+## ✨ 마무리
+
+Redis 연결 실패는 보통 네트워크 이슈처럼 보이지만, 실제로는 조직의 설정 관리 성숙도를 보여주는 지표에 가깝습니다.  
+Almighty에서는 이 사건 이후로 "앱 설정은 코드와 같은 수준으로 리뷰한다"는 원칙을 세웠고, 장애 대응 시간이 눈에 띄게 줄었습니다.
