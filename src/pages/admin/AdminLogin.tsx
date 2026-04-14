@@ -27,7 +27,7 @@ const AdminLogin = () => {
         {/* Logo */}
         <div className="text-center mb-8">
           <p className="text-[11px] font-bold tracking-widest uppercase text-muted-foreground mb-2">
-            THE LOGIC
+            Between the Lines
           </p>
           <h1 className="text-[28px] font-extrabold text-foreground">관리자 로그인</h1>
           <p className="text-[14px] text-muted-foreground mt-2">
