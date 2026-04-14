@@ -1,0 +1,105 @@
+---
+title: '[StoryG 심화] Nginx 장애 대응 런북: 배포 전 15분 점검 체크리스트'
+date: '2026-04-14'
+author: '오태훈'
+description: 'StoryG 운영 이슈를 바탕으로 만든 Nginx 배포 전 점검 런북. 502/405를 사전에 막는 실무 체크리스트를 공유합니다.'
+category: 'DevOps'
+tags: ['Nginx', '런북', '배포체크리스트', 'Jenkins', 'StoryG']
+readTime: '9분'
+thumbnail: 'cicd'
+series: 'storyg-realworld-series'
+seriesOrder: 6
+seriesLabel: '심화편 3'
+---
+
+# [StoryG 심화] Nginx 장애 대응 런북
+
+Nginx 장애는 발생 후 복구보다 배포 전에 막는 편이 훨씬 쉽습니다. StoryG에서 실제로 겪은 `502`, `405`, context-path 불일치 사례를 바탕으로 배포 전 15분 점검 런북을 만들었습니다.
+
+## 🚨 문제
+
+- 배포는 성공했는데 API만 응답 불가
+- Swagger는 열리는데 POST 테스트에서 실패
+- 도메인 전환 때마다 같은 유형의 이슈 반복
+
+## 🧪 재현
+
+아래 항목 중 하나라도 누락되면 장애가 바로 발생했습니다.
+
+- `VIRTUAL_HOST`, `VIRTUAL_PORT` 누락
+- `SERVER_URL`에 `/api/v1` 미포함
+- prod context-path와 프론트 base URL 불일치
+
+## 🔍 원인 분석
+
+Nginx 장애는 보통 "설정 파일 한 줄 실수"로 보이지만, 실제로는 배포 계약이 분산되어 생깁니다.
+
+- Jenkinsfile
+- application-prod.yml
+- swagger server url
+- dns/cors/cookie 설정
+
+이 값들이 서로 다른 기준을 쓰면 반드시 터집니다.
+
+## 🛠️ 해결
+
+### 배포 전 15분 체크리스트
+
+```bash
+# 1) 환경변수 점검
+echo "$VIRTUAL_HOST"
+echo "$VIRTUAL_PORT"
+echo "$SERVER_URL"
+echo "$SPRING_PROFILES_ACTIVE"
+
+# 2) 헬스체크
+curl -i https://ourstoryg.kr/api/v1/actuator/health
+
+# 3) 로그인 엔드포인트 메서드 점검
+curl -i -X POST https://ourstoryg.kr/api/v1/auth/login
+```
+
+### Jenkins 핵심 설정 예시
+
+```groovy
+-e VIRTUAL_HOST=api.ourstoryg.kr \
+-e VIRTUAL_PORT=8080 \
+-e SERVER_URL=https://ourstoryg.kr/api/v1 \
+-e SPRING_PROFILES_ACTIVE=prod \
+```
+
+### prod 설정 예시
+
+```yaml
+server:
+  servlet:
+    context-path: /api/v1
+
+app:
+  server-url: ${SERVER_URL:https://ourstoryg.kr/api/v1}
+```
+
+## ✅ 검증
+
+- 배포 직후 502/405 조기 탐지 가능
+- 운영자/개발자 간 점검 기준 통일
+- 신규 도메인 반영 시 회귀 장애 감소
+
+## 📌 교훈
+
+1. 운영 안정성은 기술 스택보다 체크리스트 품질에 좌우됩니다.
+2. "URL 계약"을 명시하면 Nginx 장애의 80%를 사전 차단할 수 있습니다.
+3. 배포 성공 로그보다 실제 API smoke test가 더 중요합니다.
+
+## ♻️ 재사용 체크리스트
+
+- [ ] 도메인/DNS/SSL 상태 확인
+- [ ] Jenkins env와 app config 일치 확인
+- [ ] Swagger URL과 API base path 일치 확인
+- [ ] 배포 후 핵심 API 3개 smoke test 자동화
+
+## 🔗 관련 글 / 다음 글
+
+- 기본편: [Nginx 트러블슈팅: 502, 405, 리다이렉트 이슈 복구](/post/24)
+- 연계편: [AI 프롬프트 엔지니어링: aiResult 적용기](/post/22)
+- 연계편: [Snapshot 검증 SQL과 품질 게이트](/post/26)
