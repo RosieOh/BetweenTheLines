@@ -5,7 +5,7 @@ import { getAllPosts } from "@/lib/postStorage";
 import { motion, AnimatePresence } from "framer-motion";
 
 const BlogHero = () => {
-  const featuredPosts = getAllPosts().filter((p) => p.aciScore >= 700);
+  const featuredPosts = getAllPosts().slice(0, 3);
   const [current, setCurrent] = useState(0);
   const post = featuredPosts[current];
 
@@ -69,46 +69,48 @@ const BlogHero = () => {
           </AnimatePresence>
         </div>
 
-        {/* Controls */}
-        <div className="flex items-center gap-4 mt-8">
-          <button
-            onClick={prev}
-            aria-label="이전 아티클"
-            className="w-10 h-10 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
-          >
-            <ChevronLeft size={18} />
-          </button>
+        {/* Controls — only shown when there are 2+ posts */}
+        {featuredPosts.length > 1 && (
+          <div className="flex items-center gap-4 mt-8">
+            <button
+              onClick={prev}
+              aria-label="이전 아티클"
+              className="w-10 h-10 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
+            >
+              <ChevronLeft size={18} />
+            </button>
 
-          {/* Dot indicators */}
-          <div className="flex items-center gap-2" role="tablist" aria-label="슬라이드 선택">
-            {featuredPosts.map((_, i) => (
-              <button
-                key={i}
-                role="tab"
-                aria-selected={i === current}
-                aria-label={`슬라이드 ${i + 1}`}
-                onClick={() => setCurrent(i)}
-                className={`rounded-full transition-all duration-200 ${
-                  i === current
-                    ? "w-5 h-2 bg-foreground"
-                    : "w-2 h-2 bg-border hover:bg-muted-foreground"
-                }`}
-              />
-            ))}
+            {/* Dot indicators */}
+            <div className="flex items-center gap-2" role="tablist" aria-label="슬라이드 선택">
+              {featuredPosts.map((p, i) => (
+                <button
+                  key={i}
+                  role="tab"
+                  aria-selected={i === current}
+                  aria-label={p.title}
+                  onClick={() => setCurrent(i)}
+                  className={`rounded-full transition-all duration-200 ${
+                    i === current
+                      ? "w-5 h-2 bg-foreground"
+                      : "w-2 h-2 bg-border hover:bg-muted-foreground"
+                  }`}
+                />
+              ))}
+            </div>
+
+            <button
+              onClick={next}
+              aria-label="다음 아티클"
+              className="w-10 h-10 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
+            >
+              <ChevronRight size={18} />
+            </button>
+
+            <span className="text-[13px] text-muted-foreground ml-1">
+              {current + 1} / {featuredPosts.length}
+            </span>
           </div>
-
-          <button
-            onClick={next}
-            aria-label="다음 아티클"
-            className="w-10 h-10 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-foreground transition-colors"
-          >
-            <ChevronRight size={18} />
-          </button>
-
-          <span className="text-[13px] text-muted-foreground ml-1">
-            {current + 1} / {featuredPosts.length}
-          </span>
-        </div>
+        )}
       </div>
     </section>
   );
