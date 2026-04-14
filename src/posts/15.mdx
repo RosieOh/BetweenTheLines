@@ -1,0 +1,137 @@
+---
+title: '[Almighty 실전] AI 이미지 API 실패 패턴 정리: 200 OK 함정과 프론트 방어 코드'
+date: '2026-04-14'
+author: '오태훈'
+description: 'HTTP 상태코드만 믿으면 놓치는 AI API 실패 패턴과 프론트엔드 방어 전략을 정리합니다.'
+category: 'Frontend'
+tags: ['Gemini', '이미지생성', '프론트엔드', '에러처리', 'Almighty']
+readTime: '9분'
+thumbnail: 'ai'
+---
+
+# [Almighty 실전] AI 이미지 API 실패 패턴 정리
+
+AI API 연동에서 가장 위험한 착각은 "HTTP 200이면 성공"이라는 생각입니다. Almighty 이미지 기능에서 실제로 `200 OK` + `business fail` 패턴을 경험했고, 프론트 방어 코드를 재정의했습니다.
+
+처음에는 사용자 제보가 이해되지 않았습니다. 네트워크 탭은 정상인데 결과물이 없다는 이야기였기 때문입니다. 이 사례를 겪고 나서야, API 성공 정의를 훨씬 엄격하게 관리하게 됐습니다.
+
+## 🚨 문제
+
+- 사용자 입장에서는 "요청 성공"처럼 보이는데 이미지가 없음
+- 네트워크 탭은 200이라 운영자가 초기에 놓치기 쉬움
+- 에러 메시지가 UX에 반영되지 않아 재시도만 반복
+
+## 🧪 재현
+
+응답 예시:
+
+```json
+{
+  "success": true,
+  "data": {
+    "success": false,
+    "errorCode": "PARSE_ERROR",
+    "errorMessage": "이미지 데이터(inlineData)를 찾을 수 없습니다."
+  }
+}
+```
+
+## 🔍 원인 분석
+
+응답 계약이 이중 구조였습니다.
+
+- HTTP 레벨 성공(`success`)
+- 비즈니스 레벨 성공(`data.success`)
+
+초기 구현은 상위 성공 플래그만 확인해서 하위 실패를 놓쳤습니다.
+
+## 🛠️ 해결
+
+프론트에서 성공 조건을 엄격하게 변경했습니다.
+
+```ts
+const json = await res.json();
+if (!json.success || !json.data?.success) {
+  throw new Error(json.data?.errorMessage ?? "이미지 생성 실패");
+}
+```
+
+추가로:
+
+- `errorCode`별 사용자 안내 문구 분기
+- 실패 시 재시도 버튼 + 프롬프트 수정 가이드 제공
+- 관측성 강화를 위해 실패 코드 로깅
+
+## 🔧 실전 코드: 프론트 공통 래퍼
+
+```ts
+type ApiEnvelope<T> = {
+  success: boolean;
+  message?: string;
+  data?: T;
+  errorCode?: string | null;
+};
+
+type ImageResult = {
+  success: boolean;
+  imageUrl?: string;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+};
+
+export async function requestImage(path: string, body: unknown, token: string) {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const json = (await res.json()) as ApiEnvelope<ImageResult>;
+  if (!json.success || !json.data?.success || !json.data.imageUrl) {
+    const code = json.data?.errorCode ?? json.errorCode ?? "UNKNOWN";
+    const message = json.data?.errorMessage ?? json.message ?? "이미지 생성 실패";
+    throw new Error(`[${code}] ${message}`);
+  }
+
+  return json.data.imageUrl;
+}
+```
+
+## ✅ 에러 코드별 UI 분기 예시
+
+```ts
+function toUserMessage(error: Error) {
+  const msg = error.message;
+  if (msg.includes("PARSE_ERROR")) return "이미지 생성이 어려웠어요. 프롬프트를 더 구체적으로 바꿔보세요.";
+  if (msg.includes("UNAUTHORIZED")) return "로그인이 만료되었어요. 다시 로그인해주세요.";
+  if (msg.includes("API_ERROR")) return "이미지 서비스가 일시적으로 불안정해요. 잠시 후 다시 시도해주세요.";
+  return "예기치 못한 오류가 발생했어요.";
+}
+```
+
+## ✅ 검증
+
+- "빈 성공 응답"으로 인한 사용자 혼란 감소
+- 실패 사유 노출로 재시도 성공률 개선
+- 운영에서 에러 코드별 빈도 분석 가능
+
+## 📌 교훈
+
+1. API 성공 정의는 HTTP가 아니라 도메인 계약에서 시작해야 합니다.
+2. AI API는 실패 형태가 다양하므로 오류 분류 체계가 중요합니다.
+3. 에러 메시지는 개발자 로그가 아니라 사용자 회복 UX까지 포함해야 합니다.
+
+## ♻️ 재사용 에러 정책
+
+- `PARSE_ERROR`: 프롬프트 변경 유도
+- `API_ERROR`: 잠시 후 재시도 안내
+- `UNAUTHORIZED`: 재로그인 유도
+- `500`: 일반화된 장애 메시지 + 문의 경로 제공
+
+## ✨ 마무리
+
+AI API 연동에서는 "정상 응답"보다 "정상 결과"를 검증해야 합니다. HTTP 코드만 보고 판단하면 사용자 경험은 계속 무너집니다.  
+Almighty에서는 이슈 이후 공통 에러 래퍼를 도입했고, 기능별로 중복되던 실패 처리 로직을 크게 줄일 수 있었습니다.
