@@ -1,0 +1,58 @@
+---
+title: '[실전스프링부트1장] 스프링부트 메인클래스'
+date: '2025-01-28'
+description: '스프링부트를 마스터하기 위한 걸음 첫번째! 메인 클래스의 구조와 @SpringBootApplication 어노테이션의 역할을 파헤칩니다.'
+author: '오태훈'
+category: 'SpringBoot'
+tags: ['SpringBoot', 'Java', 'Backend']
+readTime: '5분'
+thumbnail: 'architecture'
+---
+
+## 스프링부트 메인클래스
+
+웹 애플리케이션을 실행하려면 일반적으로 WAR나 EAR 아카이브 파일을 빌드하여 아파치 톰캣, 레드햇 제이보스와 같은 웹 애플리케이션 서버에 배포해야 합니다. 그러나 스프링 부트는 이 과정을 간소화하여, 메인 메서드를 실행하는 것만으로 웹 애플리케이션을 실행할 수 있도록 해줍니다.
+
+스프링부트 애플리케이션을 실행하려면 아래와 같은 메인 클래스를 작성합니다:
+
+```java
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class WaitingForBookingApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(WaitingForBookingApplication.class, args);
+    }
+}
+```
+
+### @SpringBootApplication
+
+`@SpringBootApplication` 어노테이션은 스프링 부트 애플리케이션의 메인 클래스에 붙여져 있습니다. 이 어노테이션은 사실 세 가지 중요한 어노테이션을 포함하고 있습니다:
+
+1. **@EnableAutoConfiguration**
+   - 스프링 부트의 자동 구성 기능을 활성화합니다. 클래스패스에 있는 라이브러리를 기준으로 애플리케이션을 자동으로 구성하여, 개발자가 설정할 필요 없이 스프링 부트가 적절한 빈을 자동으로 생성합니다.
+2. **@ComponentScan**
+   - 애플리케이션의 `@Component`, `@Service`, `@Repository`, `@Controller` 등 어노테이션이 붙은 클래스들을 자동으로 탐색하고 등록합니다. 이로써 스프링 IoC 컨테이너에서 해당 클래스들이 관리되는 컴포넌트로 등록됩니다.
+3. **@SpringBootConfiguration**
+   - 스프링 부트 애플리케이션 설정을 담당하는 클래스에 붙여지는 어노테이션으로, 내부적으로 `@Configuration`을 포함하고 있습니다. 이 클래스는 스프링 부트 컴포넌트 탐색을 통해 발견되며, 이 설정 클래스에서 정의된 빈들이 스프링 IoC 컨테이너로 로딩됩니다.
+
+### main() 메서드의 역할
+
+`main()` 메서드에서 `SpringApplication.run()`이 호출되면, 스프링 부트 애플리케이션이 실행되는 과정에서 다음과 같은 작업들이 이루어집니다:
+
+1. **ApplicationContext 생성**
+
+   - 클래스패스에 있는 라이브러리를 기준으로 `ApplicationContext` 클래스의 인스턴스가 생성됩니다. 이 객체는 스프링의 핵심 컨테이너로, 애플리케이션의 모든 설정과 빈들을 관리합니다.
+
+2. **CommandLinePropertySource 등록**
+
+   - 명령형 인자(Command Line Arguments)를 스프링의 프로퍼티로 읽어 들입니다. 예를 들어, `java -jar app.jar --server.port=8081`와 같이 명령줄에서 전달된 값들이 스프링 프로퍼티로 변환되어 애플리케이션의 설정에 사용될 수 있습니다.
+
+3. **빈 로딩**
+
+   - 생성된 `ApplicationContext`를 통해 모든 싱글턴 빈들이 로딩됩니다. 이 과정에서 `@Component`, `@Service`, `@Repository` 등으로 정의된 클래스들이 스프링 컨테이너에 등록되어, 필요한 곳에서 인스턴스를 주입받아 사용됩니다.
+
+4. **애플리케이션 초기화**
+   - 애플리케이션에 설정된 `ApplicationRunner`와 `CommandLineRunner` 인터페이스의 메서드들이 실행됩니다. 이 인터페이스들은 애플리케이션이 완전히 초기화된 후 실행되어야 하는 작업을 정의하는 데 사용됩니다. 예를 들어, 데이터베이스 초기화, 외부 API 호출 등과 같은 작업을 처리할 수 있습니다.
