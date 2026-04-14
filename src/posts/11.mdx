@@ -1,0 +1,127 @@
+---
+title: '[Almighty 실전] WebSocket 오리진 정책 설계: 도메인 전환 시 반드시 점검할 것들'
+date: '2026-04-14'
+author: '오태훈'
+description: 'WebSocket 연결 실패를 CORS와 동일하게 보면 놓치는 포인트를 운영 사례로 정리했습니다.'
+category: 'DevOps'
+tags: ['WebSocket', 'CORS', '실시간', '운영', 'Almighty']
+readTime: '8분'
+thumbnail: 'security'
+---
+
+# [Almighty 실전] WebSocket 오리진 정책 설계
+
+HTTP API는 멀쩡한데 WebSocket만 실패하는 날이 있습니다. Almighty 도메인 전환 과정에서 실제로 겪은 이슈를 기준으로, 오리진 정책 점검법을 정리합니다.
+
+문제가 까다로운 이유는, API smoke test는 통과하는데 실시간 화면에서만 오류가 재현되기 때문입니다. 결국 "기능 테스트는 됐는데 서비스는 안 되는" 상황이 만들어집니다.
+
+## 🚨 문제
+
+- 브라우저에서 소켓 연결 거부
+- 일부 도메인에서는 정상, 일부에서는 실패
+- 학생 모니터링/실시간 기능에 직접 영향
+
+## 🧪 재현
+
+1. 프론트 도메인을 신규 도메인으로 전환
+2. 백엔드 WebSocket 허용 오리진에 신규 도메인 누락
+3. 실시간 페이지 접속 시 핸드셰이크 실패
+
+## 🔍 원인 분석
+
+원인은 단순했습니다. 허용 오리진 목록이 현재 운영 도메인과 불일치했습니다.
+
+예시 패턴:
+
+```properties
+websocket.allowed-origins=https://hyperwise.co.kr
+```
+
+실제 운영은 `https://app.hyperwise.co.kr`에서도 접속하고 있었기 때문에 실패가 발생했습니다.
+
+## 🛠️ 해결
+
+### 1) 오리진 다중 허용 + 환경변수화
+
+```bash
+export WEBSOCKET_ALLOWED_ORIGINS=https://hyperwise.co.kr,https://app.hyperwise.co.kr
+```
+
+```properties
+websocket.allowed-origins=${WEBSOCKET_ALLOWED_ORIGINS:https://hyperwise.co.kr}
+```
+
+### 2) 도메인 변경 체크리스트에 소켓 항목 추가
+
+- API CORS만 확인하지 않고 WS 오리진도 별도 검증
+- 스테이징/운영 각각 실시간 접속 테스트 수행
+
+## 🔧 실전 코드: Spring WebSocket 설정
+
+```java
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+
+    @Value("${websocket.allowed-origins}")
+    private String[] allowedOrigins;
+
+    @Override
+    public void registerStompEndpoints(StompEndpointRegistry registry) {
+        registry.addEndpoint("/ws")
+                .setAllowedOrigins(allowedOrigins)
+                .withSockJS();
+    }
+
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry registry) {
+        registry.enableSimpleBroker("/topic", "/queue");
+        registry.setApplicationDestinationPrefixes("/app");
+    }
+}
+```
+
+## 🔧 실전 코드: 프론트 연결 예시
+
+```ts
+import { Client } from "@stomp/stompjs";
+
+const client = new Client({
+  brokerURL: "wss://app.hyperwise.co.kr/ws",
+  reconnectDelay: 3000,
+  onConnect: () => {
+    client.subscribe("/topic/monitoring/lecture-1", (message) => {
+      console.log("message", JSON.parse(message.body));
+    });
+  },
+  onStompError: (frame) => {
+    console.error("stomp error", frame.headers["message"]);
+  },
+});
+
+client.activate();
+```
+
+## ✅ 검증
+
+- 두 도메인 모두 WebSocket 연결 성공
+- 실시간 모니터링/heartbeat 정상 동작
+- 도메인 변경 후 재발 없음
+
+## 📌 교훈
+
+1. WebSocket 오리진 정책은 HTTP CORS와 점검 포인트가 다릅니다.
+2. 도메인 전환은 "URL만 바꾸는 작업"이 아니라 보안정책 동기화 작업입니다.
+3. 실시간 기능은 장애 체감이 크므로 배포 체크리스트 우선순위를 높여야 합니다.
+
+## ♻️ 재사용 체크리스트
+
+- [ ] 운영 도메인 목록 최신화
+- [ ] API CORS + WS 오리진 분리 점검
+- [ ] 프론트 실시간 페이지 E2E 확인
+- [ ] 도메인 전환 runbook 유지
+
+## ✨ 마무리
+
+도메인 전환 작업은 주소 교체가 아니라 정책 동기화 작업입니다. 특히 WebSocket은 API와 실패 지점이 달라서, 별도 체크리스트가 없으면 쉽게 놓치게 됩니다.  
+Almighty에서는 이 이슈 이후로 배포 완료 기준에 "실시간 페이지 검증"을 필수로 넣었습니다.
