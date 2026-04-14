@@ -1,0 +1,140 @@
+---
+title: '[Almighty 실전] 30~60초 응답 API UX 설계: 로딩/폴링/타임아웃으로 이탈률 줄이기'
+date: '2026-04-14'
+author: '오태훈'
+description: 'AI 생성 API의 긴 응답 시간을 UX 문제로 풀어낸 경험과 프론트 패턴을 정리합니다.'
+category: 'Frontend'
+tags: ['UX', 'Polling', 'Timeout', 'AI서비스', 'Almighty']
+readTime: '9분'
+thumbnail: 'communication'
+---
+
+# [Almighty 실전] 30~60초 응답 API UX 설계
+
+AI 기능은 성능 최적화만으로 해결되지 않는 영역이 있습니다. 모델 특성상 응답이 긴 경우, 사용자가 기다릴 수 있게 만드는 UX 설계 자체가 기능 품질입니다.
+
+실제로 내부 테스트에서는 기능이 성공해도, 사용자 테스트에서는 "아무 반응이 없다"는 피드백이 반복됐습니다. 이때부터 응답 속도 자체보다 대기 경험을 설계하는 데 집중했습니다.
+
+## 🚨 문제
+
+- 이미지/영상 생성 요청이 30~60초 소요
+- 사용자는 "멈춤"으로 인식하고 이탈
+- 중복 클릭으로 동일 요청 다중 생성
+
+## 🧪 재현
+
+1. 생성 버튼 클릭 후 즉시 응답 없음
+2. 로딩 피드백이 약하면 재클릭 발생
+3. 서버에 중복 요청 누적, 사용자는 실패 체감
+
+## 🔍 원인 분석
+
+기술 문제와 UX 문제가 결합되어 있었습니다.
+
+- 기술: 장시간 처리(비동기)
+- UX: 상태 가시성 부족, 예측 가능성 부족
+
+## 🛠️ 해결
+
+### 1) 상태를 세분화해서 노출
+
+- `요청 전송 중`
+- `생성 중 (예상 30~60초)`
+- `후처리 중`
+- `완료`
+
+### 2) `jobId` 기반 폴링 전략
+
+```ts
+const poll = async (jobId: string, max = 30) => {
+  for (let i = 0; i < max; i++) {
+    const status = await fetchStatus(jobId);
+    if (status === "COMPLETED") return;
+    if (status === "FAILED") throw new Error("생성 실패");
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  throw new Error("처리 시간이 초과되었습니다.");
+};
+```
+
+### 3) 중복 요청 방지
+
+- 버튼 비활성화
+- 동일 입력 해시로 중복 요청 차단
+- 취소/뒤로가기 시 요청 상태 명확화
+
+## 🔧 실전 코드: 상태 머신 패턴
+
+```ts
+type GenerationState =
+  | "IDLE"
+  | "REQUESTING"
+  | "PROCESSING"
+  | "POST_PROCESSING"
+  | "COMPLETED"
+  | "FAILED"
+  | "TIMEOUT";
+
+const [state, setState] = useState<GenerationState>("IDLE");
+const [jobId, setJobId] = useState<string | null>(null);
+
+async function onGenerate(prompt: string) {
+  setState("REQUESTING");
+  try {
+    const created = await createJob(prompt); // returns { jobId }
+    setJobId(created.jobId);
+    setState("PROCESSING");
+    await poll(created.jobId);
+    setState("POST_PROCESSING");
+    await loadResult(created.jobId);
+    setState("COMPLETED");
+  } catch (e) {
+    setState(String(e).includes("초과") ? "TIMEOUT" : "FAILED");
+  }
+}
+```
+
+## 🔧 실전 코드: 중복 요청 방지 키
+
+```ts
+function requestKey(prompt: string, mode: string) {
+  return `${mode}:${prompt.trim().toLowerCase()}`;
+}
+
+const inflight = new Set<string>();
+
+async function guardedGenerate(prompt: string, mode: string) {
+  const key = requestKey(prompt, mode);
+  if (inflight.has(key)) return;
+  inflight.add(key);
+  try {
+    await onGenerate(prompt);
+  } finally {
+    inflight.delete(key);
+  }
+}
+```
+
+## ✅ 검증
+
+- 중복 요청 감소
+- 사용자의 중도 이탈률 완화
+- 완료/실패 상태 인지가 명확해져 문의 감소
+
+## 📌 교훈
+
+1. 느린 API는 성능 문제가 아니라 "대기 경험 설계" 문제일 수 있습니다.
+2. 진행 상태를 텍스트로 설명해주면 사용자는 기다립니다.
+3. 비동기 UX는 기술 구현과 제품 카피가 함께 설계되어야 합니다.
+
+## ♻️ 재사용 UX 체크리스트
+
+- [ ] 예상 소요 시간 안내
+- [ ] 진행 단계별 상태 문구
+- [ ] 중복 클릭 방지
+- [ ] 타임아웃/실패 시 다음 액션 제공
+
+## ✨ 마무리
+
+느린 AI API는 기술 문제가 아니라 제품 경험 문제로 번지는 경우가 많습니다. 사용자에게 현재 상태와 다음 행동을 알려주면, 같은 지연 시간도 훨씬 덜 답답하게 느껴집니다.  
+Almighty에서는 상태 머신 도입 이후, 실패 문의보다 "어디까지 진행됐는지 보인다"는 피드백이 더 많아졌습니다.
