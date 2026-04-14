@@ -1,0 +1,92 @@
+---
+title: '[StoryG 실전] 만족도 설문 PRE/POST 분리 설계: response_context를 살린 방법'
+date: '2026-04-14'
+author: '오태훈'
+description: '만족도 설문에서 동일 질문의 사전/사후 답변을 안정적으로 분리 저장한 설계 과정을 기록합니다.'
+category: 'SpringBoot'
+tags: ['설문설계', 'DB모델링', 'PREPOST', 'StoryG', '트러블슈팅']
+readTime: '10분'
+thumbnail: 'architecture'
+---
+
+# [StoryG 실전] 만족도 설문 PRE/POST 분리 설계
+
+같은 질문을 수업 전/후에 한 번씩 받으면, 저장은 단순해 보이지만 분석 단계에서 큰 차이가 납니다. StoryG에서는 `response_context`가 계속 `NULL`로 저장되는 문제를 겪었고, 설계를 다시 정리했습니다.
+
+## 🚨 문제
+
+- `tbl_answers.response_context`가 계속 `NULL`
+- 동일 `questionId`의 PRE/POST 비교가 불가능
+- 리포트/엑셀에서 전후 비교 지표를 만들 수 없음
+
+## 🧪 재현
+
+```sql
+SELECT question_id, response_context, answer_rating
+FROM tbl_answers
+WHERE survey_response_id = ?;
+```
+
+결과:
+
+```text
+question_id | response_context | answer_rating
+101         | NULL             | 4
+101         | NULL             | 2
+```
+
+## 🔍 원인 분석
+
+서버는 각 answer의 `responseContext`를 읽었고, 프론트는 요청 최상단 `stage`만 보냈습니다.
+
+```json
+{
+  "isSatisfaction": true,
+  "stage": "PRE",
+  "answers": [
+    { "questionId": 101, "answerRating": 4 }
+  ]
+}
+```
+
+즉 "어디서 PRE/POST를 읽을지" 계약이 어긋난 상태였습니다.
+
+## 🛠️ 해결
+
+`TemplateSection.isPrePost` 플래그를 추가하고, `SurveyResponse.stage`에서 자동 파생하도록 변경했습니다.
+
+핵심 로직:
+
+```java
+AnswerContext resolvedContext = null;
+if (question.getTemplateSection() != null && Boolean.TRUE.equals(question.getTemplateSection().getIsPrePost())) {
+    if (surveyResponse.getStage() != null) {
+        resolvedContext = switch (surveyResponse.getStage()) {
+            case PRE  -> AnswerContext.PRE;
+            case POST -> AnswerContext.POST;
+            default   -> null;
+        };
+    }
+} else {
+    resolvedContext = AnswerContext.fromString(answerReq.getResponseContext());
+}
+```
+
+## ✅ 검증
+
+- `isPrePost=true` 섹션 문항은 PRE/POST 자동 저장
+- 일반 섹션은 기존 동작 유지
+- 프론트 요청 구조 변경 없이 호환 유지
+
+## 📌 교훈
+
+1. 컨텍스트 값은 필드 추가보다 "결정 책임이 어디에 있는지"가 더 중요합니다.
+2. enum보다 boolean이 의미를 더 명확하게 표현할 때가 있습니다.
+3. API 계약 불일치는 런타임 오류보다 분석 오류로 더 늦게 드러납니다.
+
+## ♻️ 재사용 체크리스트
+
+- [ ] 컨텍스트 결정 주체(프론트/백엔드) 문서화
+- [ ] 템플릿 메타(`isPrePost`)와 제출 메타(`stage`) 분리
+- [ ] SQL로 저장 결과 PRE/POST 샘플 검증
+- [ ] 리포트팀과 필드 의미 합의
