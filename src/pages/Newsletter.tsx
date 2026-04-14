@@ -7,20 +7,20 @@ import { validateEmail } from "@/lib/utils";
 
 const benefits = [
   {
-    title: "주간 ACI 하이라이트",
-    description: "매주 월요일, 이번 주 가장 높은 ACI 스코어를 받은 아티클 5편을 선별해 보내드립니다.",
+    title: "주간 베스트 포스트",
+    description: "매주 월요일, 이번 주 가장 많이 읽힌 아티클 5편을 선별해 보내드립니다.",
   },
   {
-    title: "엔지니어링 인사이트 요약",
+    title: "기술 인사이트 요약",
     description: "긴 아티클을 읽을 시간이 없을 때, 핵심 인사이트만 추출한 요약을 제공합니다.",
   },
   {
-    title: "AES 사고 브리핑",
-    description: "업계의 중요한 엔지니어링 사고와 Hyperwise의 사후 분석을 공유합니다.",
+    title: "새 포스트 알림",
+    description: "새로운 포스트가 올라오면 가장 먼저 이메일로 알려드립니다.",
   },
   {
-    title: "채용 & 커뮤니티 소식",
-    description: "Hyperwise Studio의 채용 공고와 엔지니어링 커뮤니티 이벤트 소식을 전달합니다.",
+    title: "개발 커뮤니티 소식",
+    description: "주목할 만한 오픈소스, 기술 트렌드, 개발자 커뮤니티 이벤트 소식을 전달합니다.",
   },
 ];
 
@@ -59,25 +59,27 @@ const Newsletter = () => {
               </p>
             </div>
             <h1 className="text-[36px] md:text-[52px] font-extrabold text-foreground leading-[1.15] tracking-tight mb-5">
-              THE LOGIC
+              Between the Lines
               <br />
               뉴스레터
             </h1>
             <p className="text-[17px] text-muted-foreground leading-relaxed max-w-xl mb-8">
-              매주 최고의 엔지니어링 인사이트를 이메일로 받아보세요.
-              ACI 하이라이트부터 업계 사고 분석까지, 놓치면 아쉬운 콘텐츠를 선별해 전달합니다.
+              매주 최고의 기술 인사이트를 이메일로 받아보세요.
+              새 포스트 알림부터 개발 트렌드까지, 놓치면 아쉬운 콘텐츠를 선별해 전달합니다.
             </p>
 
             {/* Subscription form */}
             {!submitted ? (
               <form onSubmit={handleSubmit} className="flex flex-col gap-3 max-w-md">
-                <div className="flex gap-2">
+                <label htmlFor="hero-email" className="sr-only">이메일 주소</label>
+                <div className="flex flex-col sm:flex-row gap-2">
                   <div className="flex-1 relative">
                     <Mail
                       size={16}
                       className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground"
                     />
                     <input
+                      id="hero-email"
                       type="email"
                       value={email}
                       onChange={(e) => {
@@ -85,19 +87,20 @@ const Newsletter = () => {
                         setError("");
                       }}
                       placeholder="your@email.com"
+                      aria-describedby={error ? "hero-email-error" : undefined}
                       className="w-full h-11 pl-10 pr-4 rounded-xl border border-border bg-background text-[14px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent transition-colors"
                     />
                   </div>
                   <button
                     type="submit"
-                    className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-[13px] font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
+                    className="flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-[13px] font-semibold hover:opacity-90 transition-opacity whitespace-nowrap"
                   >
                     구독하기
                     <ArrowRight size={14} />
                   </button>
                 </div>
                 {error && (
-                  <p className="text-[13px] text-red-500">{error}</p>
+                  <p id="hero-email-error" role="alert" className="text-[13px] text-red-500">{error}</p>
                 )}
                 <p className="text-[12px] text-muted-foreground">
                   스팸 메일은 절대 보내지 않으며, 언제든지 구독을 해지할 수 있습니다.
@@ -175,9 +178,11 @@ const Newsletter = () => {
               </p>
               <form
                 onSubmit={handleSubmit}
-                className="flex gap-2 max-w-sm mx-auto"
+                className="flex flex-col sm:flex-row gap-2 max-w-sm mx-auto"
               >
+                <label htmlFor="cta-email" className="sr-only">이메일 주소</label>
                 <input
+                  id="cta-email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -186,7 +191,7 @@ const Newsletter = () => {
                 />
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-[13px] font-semibold hover:opacity-90 transition-opacity"
+                  className="h-11 px-5 rounded-xl bg-primary text-primary-foreground text-[13px] font-semibold hover:opacity-90 transition-opacity"
                 >
                   구독
                 </button>
