@@ -1,0 +1,110 @@
+---
+title: '[StoryG 실전 가이드] SnapShot 설계: PRE/POST 응답 비교 가능한 데이터 모델'
+date: '2026-04-14'
+author: '오태훈'
+description: 'StoryG 설문 시스템 사례로 보는 Snapshot 데이터 설계. PRE/POST 응답을 비교 가능한 형태로 저장하는 모델링과 구현 코드를 정리합니다.'
+category: 'SpringBoot'
+tags: ['Snapshot', '설문', '데이터모델링', 'StoryG', '백엔드']
+readTime: '10분'
+thumbnail: 'architecture'
+series: 'storyg-realworld-series'
+seriesOrder: 2
+seriesLabel: '기본편 2'
+---
+
+# [StoryG 실전] SnapShot 설계
+
+설문 데이터를 운영에서 진짜로 쓰려면 "제출했다"보다 "언제 어떤 맥락으로 제출했는가"가 중요합니다. StoryG에서는 만족도 설문 PRE/POST를 스냅샷처럼 남기지 못해 분석이 막혔고, 이를 데이터 모델로 해결했습니다.
+
+## 🚨 문제
+
+- `response_context`가 `NULL`로 저장되어 PRE/POST 비교 불가
+- 동일 `questionId`의 시간축 변화 분석이 불가능
+- 리포트/엑셀에서 전후 비교 지표를 만들 수 없음
+
+## 🧪 재현
+
+```sql
+SELECT question_id, response_context, answer_rating
+FROM tbl_answers
+WHERE survey_response_id = ?;
+```
+
+```text
+question_id | response_context | answer_rating
+101         | NULL             | 4
+101         | NULL             | 2
+```
+
+데이터는 있지만 의미가 없는 상태였습니다.
+
+## 🔍 원인 분석
+
+프론트와 백엔드의 컨텍스트 계약이 어긋났습니다.
+
+- 프론트: 요청 최상단 `stage`에 PRE/POST 전달
+- 백엔드: 각 answer의 `responseContext`에서 읽으려 함
+
+즉 스냅샷 컨텍스트의 소스를 어디로 볼지 합의가 없었습니다.
+
+## 🛠️ 해결
+
+핵심은 섹션 플래그 + 제출시점 파생으로 분리한 것입니다.
+
+1. `TemplateSection.isPrePost` 도입
+2. `SurveyResponse.stage`를 기준으로 `Answer.response_context` 자동 파생
+
+```java
+AnswerContext resolvedContext = null;
+if (question.getTemplateSection() != null && Boolean.TRUE.equals(question.getTemplateSection().getIsPrePost())) {
+    if (surveyResponse.getStage() != null) {
+        resolvedContext = switch (surveyResponse.getStage()) {
+            case PRE  -> AnswerContext.PRE;
+            case POST -> AnswerContext.POST;
+            default   -> null;
+        };
+    }
+} else {
+    resolvedContext = AnswerContext.fromString(answerReq.getResponseContext());
+}
+```
+
+### 스키마 포인트
+
+```sql
+-- 신규 플래그
+tbl_template_sections.is_pre_post BOOLEAN DEFAULT false
+
+-- 기존 컬럼 재활용
+tbl_answers.response_context VARCHAR(20) NULL
+```
+
+## ✅ 검증
+
+- isPrePost 섹션 문항은 PRE/POST가 안정적으로 저장
+- 일반 섹션은 기존 동작 유지
+- 프론트 요청 구조를 크게 바꾸지 않고 적용 완료
+
+## 📌 교훈
+
+1. Snapshot 데이터는 저장 여부보다 "컨텍스트 결정 규칙"이 핵심입니다.
+2. enum을 늘리는 것보다 의미가 명확한 boolean 플래그가 더 나은 경우가 있습니다.
+3. 분석 실패는 런타임 에러보다 늦게 드러나므로 계약 검증이 필수입니다.
+
+## ♻️ 재사용 체크리스트
+
+- [ ] 제출 컨텍스트(stage)와 질문 메타(isPrePost) 분리
+- [ ] DB에서 PRE/POST 샘플 쿼리 자동 검증
+- [ ] 프론트-백엔드 계약 문서에 컨텍스트 위치 명시
+- [ ] 리포트팀과 필드 의미를 합의한 뒤 반영
+
+## ✨ 마무리
+
+이번 이슈를 통해 배운 건 단순합니다. 데이터는 "저장"이 아니라 "해석 가능성"까지 설계되어야 합니다.  
+Snapshot이 필요한 도메인이라면, 지금 필드가 아니라 컨텍스트 결정 규칙부터 점검해보세요.
+
+## 🔗 관련 글 / 다음 글
+
+- 이전 글: [AI 프롬프트 엔지니어링: aiResult 적용기](/post/22)
+- 다음 글: [Nginx 트러블슈팅 모음: 502/405 복구](/post/24)
+- 심화편: [Snapshot 검증 SQL과 품질 게이트 설계](/post/26)
