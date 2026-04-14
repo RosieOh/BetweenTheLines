@@ -20,10 +20,20 @@ function toIsoDate(dateLike) {
   return d.toISOString().slice(0, 10);
 }
 
-const postFiles = readdirSync(POSTS_DIR).filter((name) => name.endsWith(".mdx"));
-const postRoutes = postFiles.map((name) => {
-  const id = name.replace(/\.mdx$/, "");
-  const raw = readFileSync(join(POSTS_DIR, name), "utf8");
+function walkMdxFiles(dir) {
+  const entries = readdirSync(dir, { withFileTypes: true });
+  return entries.flatMap((entry) => {
+    const fullPath = join(dir, entry.name);
+    if (entry.isDirectory()) return walkMdxFiles(fullPath);
+    if (entry.isFile() && entry.name.endsWith(".mdx")) return [fullPath];
+    return [];
+  });
+}
+
+const postFiles = walkMdxFiles(POSTS_DIR);
+const postRoutes = postFiles.map((fullPath) => {
+  const id = fullPath.split("/").pop().replace(/\.mdx$/, "");
+  const raw = readFileSync(fullPath, "utf8");
   return {
     loc: `/post/${id}`,
     lastmod: toIsoDate(parseDate(raw)),

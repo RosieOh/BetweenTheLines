@@ -14,8 +14,8 @@ const thumbnailMap: Record<string, string> = {
   cicd: thumbCicd,
 };
 
-// Vite import.meta.glob으로 src/posts/*.mdx를 raw 문자열로 로드
-const rawFiles = import.meta.glob("../posts/*.mdx", {
+// Vite import.meta.glob으로 src/posts 하위 모든 mdx를 raw 문자열로 로드
+const rawFiles = import.meta.glob("../posts/**/*.mdx", {
   query: "?raw",
   import: "default",
   eager: true,
