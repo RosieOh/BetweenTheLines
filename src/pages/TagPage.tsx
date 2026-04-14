@@ -17,7 +17,7 @@ const TagPage = () => {
     p.tags.some((t) => t.toLowerCase() === decodedTag.toLowerCase())
   );
 
-  const sorted = [...posts].sort((a, b) => b.aciScore - a.aciScore);
+  const sorted = [...posts].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   // Related tags: tags that appear in the same posts, excluding current
   const relatedTags = Array.from(
