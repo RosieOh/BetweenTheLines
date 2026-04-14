@@ -1,0 +1,125 @@
+---
+title: '[Almighty 실전] 세션 자동 제출 배치 장애: 한 건의 예외가 전체 누락으로 번진 이유'
+date: '2026-04-14'
+author: '오태훈'
+description: '배치 루프에서 예외 처리 경계가 왜 중요한지, 만료 세션 자동 제출 장애 사례로 설명합니다.'
+category: 'SpringBoot'
+tags: ['Batch', '예외처리', 'Runtime', 'SpringBoot', 'Almighty']
+readTime: '9분'
+thumbnail: 'architecture'
+---
+
+# [Almighty 실전] 자동 제출 배치 장애 회고
+
+배치는 "한 번에 많이 처리"하는 구조라, 예외 경계가 잘못되면 장애 범위가 폭발적으로 커집니다. Almighty의 만료 세션 자동 제출 로직도 같은 문제를 겪었습니다.
+
+처음 장애를 봤을 때는 "특정 세션 데이터가 이상하네" 정도로 생각했습니다. 그런데 실제로는 한 건의 예외가 이후 세션 전체를 멈추게 만들고 있었고, 이걸 계기로 배치 설계 기준 자체를 다시 잡게 됐습니다.
+
+## 🚨 문제
+
+- 특정 세션 처리 중 예외 발생
+- 이후 세션들이 아예 처리되지 않음
+- 결과적으로 만료 세션 누락 발생
+
+## 🧪 재현
+
+1. 만료 세션 목록을 순회하며 자동 제출 수행
+2. 중간 세션 하나에서 파싱/외부 API 오류 발생
+3. 루프 전체 중단
+
+## 🔍 원인 분석
+
+핵심 실수는 "루프 바깥 예외 처리"였습니다.
+
+- `for` 루프 전체를 하나의 try-catch로 감쌈
+- 첫 번째 실패에서 메서드 종료
+- 나머지 세션 처리 기회 상실
+
+## 🛠️ 해결
+
+세션 단위로 실패 격리(fail isolation)하도록 구조를 변경했습니다.
+
+```java
+for (Session session : expiredSessions) {
+    try {
+        autoSubmit(session);
+    } catch (Exception e) {
+        log.error("auto submit failed. sessionId={}", session.getId(), e);
+        markFailed(session);
+        continue;
+    }
+}
+```
+
+추가로:
+
+- 실패 세션 재시도 큐 분리
+- 성공/실패 카운터 메트릭 추가
+- 장애 알림을 "전체 실패"가 아니라 "실패율 임계치" 기반으로 전환
+
+### 실패율 기반 알람 코드
+
+```java
+int total = expiredSessions.size();
+int success = result.getSuccessCount();
+int fail = result.getFailCount();
+double failRate = total == 0 ? 0 : ((double) fail / total) * 100.0;
+
+log.info("auto-submit done total={}, success={}, fail={}, failRate={}%", total, success, fail, failRate);
+
+if (failRate >= 20.0) {
+    alertService.notify(
+        "AUTO_SUBMIT_FAIL_RATE_HIGH",
+        String.format("failRate=%.2f%%, total=%d, fail=%d", failRate, total, fail)
+    );
+}
+```
+
+### 재시도 큐 분리 코드
+
+```java
+public void markFailed(Session session) {
+    failedSessionRepository.save(FailedSession.of(
+        session.getId(),
+        LocalDateTime.now(),
+        "AUTO_SUBMIT_EXCEPTION"
+    ));
+}
+
+@Scheduled(cron = "0 */5 * * * *")
+public void retryFailedSessions() {
+    List<FailedSession> items = failedSessionRepository.findRetryTargets(3);
+    for (FailedSession item : items) {
+        try {
+            autoSubmit(item.getSessionId());
+            item.markResolved();
+        } catch (Exception e) {
+            item.increaseRetryCount();
+        }
+    }
+}
+```
+
+## ✅ 검증
+
+- 일부 세션 실패 상황에서도 나머지 세션 정상 처리
+- 장애 범위가 "전체"에서 "개별 세션"으로 축소
+- 운영 중 자동 제출 누락 이슈 크게 감소
+
+## 📌 교훈
+
+1. 배치 안정성의 핵심은 처리량이 아니라 실패 격리입니다.
+2. 로그는 "실패했다"보다 "무엇이 얼마나 실패했는지"를 남겨야 합니다.
+3. 재시도 전략 없이 배치 안정성을 말할 수 없습니다.
+
+## ♻️ 재사용 체크리스트
+
+- [ ] 루프 내부 단위 예외 처리 적용
+- [ ] 실패 세션 재시도 정책 정의
+- [ ] 처리량/실패율 메트릭 대시보드화
+- [ ] 부분 실패 시 운영자 액션(runbook) 문서화
+
+## ✨ 마무리
+
+배치 장애는 조용히 쌓이다가 뒤늦게 크게 터지는 경우가 많습니다. 그래서 Almighty에서는 배치 코드를 작성할 때 "성공 경로"보다 "실패를 어떻게 격리할지"를 먼저 리뷰하고 있습니다.  
+같은 유형의 잡을 운영 중이라면, 오늘 바로 루프 예외 경계부터 점검해보세요.
