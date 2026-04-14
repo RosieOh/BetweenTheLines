@@ -1,0 +1,116 @@
+---
+title: '[Almighty 실전] DB 권한/비밀번호 이슈를 배포 파이프라인에서 차단하는 법'
+date: '2026-04-14'
+author: '오태훈'
+description: 'DB 접속 실패를 사후 대응이 아닌 배포 파이프라인 선제 차단으로 바꾼 방법을 정리합니다.'
+category: 'DevOps'
+tags: ['Database', 'MariaDB', '배포자동화', '보안', 'Almighty']
+readTime: '8분'
+thumbnail: 'security'
+---
+
+# [Almighty 실전] DB 권한/비밀번호 이슈를 파이프라인에서 막기
+
+운영 장애 중 빈도가 높은 유형은 "설정 누락 + 권한 불일치"입니다. Almighty에서 DB 관련 장애를 반복하며 느낀 건, 장애를 빨리 고치는 것보다 아예 배포 단계에서 막는 것이 훨씬 싸다는 점이었습니다.
+
+특히 DB 장애는 서비스 코드가 정상이어도 발생하기 때문에, 팀 입장에서는 심리적으로 더 답답합니다. "어제까지 됐는데 왜 오늘 안 되지?"라는 질문에 가장 자주 걸리는 영역이기도 합니다.
+
+## 🚨 문제
+
+- 배포 후 앱이 DB 연결 단계에서 실패
+- 원인 후보가 너무 많아(비밀번호/host/권한/네트워크) 진단 시간 증가
+- 장애 시간보다 "원인 좁히는 시간"이 더 길어짐
+
+## 🧪 재현
+
+1. DB 사용자 권한이 특정 host에만 부여된 상태
+2. 서버 IP 또는 접속 호스트가 달라짐
+3. 배포 직후 앱 기동 시 인증 실패
+
+## 🔍 원인 분석
+
+문제는 두 축이 동시에 있었습니다.
+
+- **비밀값 관리 축**: 배포 환경에 잘못된 `DB_PASSWORD` 주입
+- **권한 정책 축**: DB 사용자 `GRANT` 범위와 실제 배포 호스트 불일치
+
+한쪽만 수정해도 다른 축에서 실패해서, 재발이 잦았습니다.
+
+## 🛠️ 해결
+
+### 1) 배포 전 DB 연결 헬스체크 선실행
+
+```bash
+mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" -e "SELECT 1;" > /dev/null
+if [ $? -ne 0 ]; then
+  echo "[ERROR] DB preflight failed"
+  exit 1
+fi
+```
+
+### 2) 최소 권한 원칙 + host 정책 문서화
+
+- 앱 계정은 필요한 스키마에 필요한 권한만 부여
+- 운영 서버 host 범위 명시
+- 긴급 계정 사용 금지
+
+### 3) 비밀번호 소스 단일화
+
+- `.env`, CI secret, 서버 변수 중 "최종 진실 원천" 하나만 유지
+- 배포 로그에 민감정보는 마스킹
+
+### 4) 배포 스크립트에 단계적 실패 메시지 추가
+
+원인 분류가 빨라지도록 DB 접속 전/후 단계 로그를 명확히 남겼습니다.
+
+```bash
+echo "[STEP] validate env"
+./scripts/validate-env.sh
+
+echo "[STEP] db preflight"
+./scripts/db-preflight.sh
+
+echo "[STEP] deploy app"
+docker compose up -d --pull always
+```
+
+## 🔧 실전 SQL: 최소 권한 예시
+
+```sql
+CREATE USER 'almighty_app'@'10.%' IDENTIFIED BY 'strong-password';
+GRANT SELECT, INSERT, UPDATE, DELETE ON almighty.* TO 'almighty_app'@'10.%';
+FLUSH PRIVILEGES;
+```
+
+운영에서는 `%`보다 실제 대역(`10.%`, 특정 host)을 권장합니다.
+
+## ✅ 운영 검증 시나리오
+
+```bash
+mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" -e "SHOW DATABASES;"
+mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" -p"$DB_PASSWORD" -e "USE almighty; SELECT COUNT(*) FROM TBL_USER;"
+```
+
+## ✅ 검증
+
+- 파이프라인 단계에서 잘못된 비밀값 즉시 감지
+- 배포 후 DB 인증 실패 건수 급감
+- 장애 대응 시 "권한/비밀번호/네트워크" 분류 진단 시간 단축
+
+## 📌 교훈
+
+1. DB 장애의 70%는 코드보다 설정/권한 관리에서 터집니다.
+2. "기동 후 발견"이 아니라 "배포 전 차단" 구조로 바꿔야 합니다.
+3. 비밀값은 분산 저장할수록 사고 확률이 높아집니다.
+
+## ♻️ 운영 점검표
+
+- [ ] DB preflight check를 배포 파이프라인에 포함
+- [ ] DB 권한 정책 문서 최신화
+- [ ] CI secret 변경 이력 추적 가능
+- [ ] 실패 시 롤백 대신 원인 카테고리 자동 출력
+
+## ✨ 마무리
+
+DB 장애를 "운영에서 생기면 고친다" 방식으로 두면, 팀의 배포 신뢰도는 계속 깎입니다.  
+Almighty에서는 이번 이슈를 계기로 DB 검증을 배포 파이프라인의 첫 단계로 올렸고, 이후에는 "장애 대응"보다 "사전 차단"에 시간을 쓰게 됐습니다.
