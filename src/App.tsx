@@ -2,6 +2,7 @@ import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import RouteLoadingBar from "@/components/ui/RouteLoadingBar";
 import { ThemeProvider } from "next-themes";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
@@ -24,7 +25,7 @@ const Newsletter = lazy(() => import("./pages/Newsletter"));
 
 const PageFallback = () => (
   <div className="min-h-screen bg-background flex items-center justify-center">
-    <div className="w-6 h-6 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+    <p className="text-sm text-muted-foreground">페이지를 불러오는 중...</p>
   </div>
 );
 
@@ -34,6 +35,7 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter basename={import.meta.env.BASE_URL}>
+        <RouteLoadingBar />
         <Suspense fallback={<PageFallback />}>
           <Routes>
             <Route path="/" element={<Index />} />
