@@ -12,6 +12,7 @@ import ContactModal from "@/components/blog/ContactModal";
 import ReadingProgressBar from "@/components/blog/ReadingProgressBar";
 import ScrollToTop from "@/components/blog/ScrollToTop";
 import GiscusComments from "@/components/blog/GiscusComments";
+import NotFoundInline from "@/components/blog/NotFoundInline";
 import { getAllPosts } from "@/lib/postStorage";
 import { categoryStyles } from "@/lib/categoryConfig";
 import { sanitizeHref } from "@/lib/utils";
@@ -370,21 +371,7 @@ const PostDetail = () => {
   }, [post]);
 
   if (!post) {
-    return (
-      <div className="min-h-screen bg-background flex flex-col">
-        <BlogHeader />
-        <main className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <p className="text-5xl font-extrabold text-foreground mb-3">404</p>
-            <p className="text-muted-foreground mb-6">포스트를 찾을 수 없습니다.</p>
-            <Link to="/" className="text-accent font-medium hover:underline">
-              홈으로 돌아가기
-            </Link>
-          </div>
-        </main>
-        <BlogFooter />
-      </div>
-    );
+    return <NotFoundInline message="포스트를 찾을 수 없습니다." />;
   }
 
   const headings = extractHeadings(post.content);
