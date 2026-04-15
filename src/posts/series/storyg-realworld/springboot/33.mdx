@@ -1,0 +1,123 @@
+---
+title: '[StoryG 프로젝트] Spring Batch 초기화 함정: DB 미연결 시 앱 기동 실패 체인 분석'
+date: '2026-04-15'
+author: '오태훈'
+description: 'StoryG 운영 이슈를 바탕으로 spring.batch.jdbc.initialize-schema 설정이 만든 연쇄 기동 실패를 분석하고 안전한 운영 설정으로 전환한 과정을 정리합니다.'
+category: 'SpringBoot'
+tags: ['SpringBatch', 'SpringBoot', '장애대응', 'DB', 'StoryG']
+readTime: '9분'
+thumbnail: 'architecture'
+series: 'storyg-realworld-series'
+seriesOrder: 12
+seriesLabel: '심화편 9'
+---
+
+# [StoryG 프로젝트] Spring Batch 초기화 함정
+
+DB가 잠깐 내려간 상태에서 앱을 올렸는데, 단순 DB 재시도 실패가 아니라 **애플리케이션 전체가 기동 실패**하는 문제가 발생했습니다.  
+원인은 `spring.batch.jdbc.initialize-schema: always` 한 줄이었고, 영향은 JPA/보안 필터까지 연쇄적으로 퍼졌습니다.
+
+처음 장애를 봤을 때는 "DB가 죽었으니 앱도 못 뜨는 건 당연한 것 아닌가?"라는 반응이 있었습니다.  
+하지만 운영에서 중요한 건 "실패의 범위"입니다. DB 장애가 있어도 앱 전체가 무너지는 설계는 복구 시간을 급격히 늘립니다.
+
+이 이슈를 통해 배운 건, 자동 설정은 편리하지만 운영 맥락에서는 위험할 수 있다는 점이었습니다.  
+특히 사용하지 않는 기능의 auto-config는 꺼두는 게 곧 장애 격리 전략입니다.
+
+## 🕰️ 사건 타임라인
+
+- DB 준비 전 앱 기동 시도에서 전체 기동 실패 발생
+- 로그 체인 분석으로 batch initializer 선행 실패 확인
+- 환경별 초기화 정책 재정의(`never/embedded`)
+- 기동 가드레일(readiness) 반영 후 재발 감소
+
+## 🚨 문제
+
+- DB 미연결 상태에서 Spring Boot 기동 시 앱 전체 시작 실패
+- 로그상 batch initializer 실패 후 JPA 초기화까지 연쇄 실패
+- 결과적으로 API 서버 자체가 올라오지 않음
+
+## 🧪 재현
+
+다음 조건에서 재현되었습니다.
+
+1. `spring.batch.jdbc.initialize-schema: always` 설정
+2. 앱 기동 시점에 DB 연결 불가
+
+대표 로그:
+
+```text
+Failed to determine DatabaseDriver
+Failed to obtain JDBC Connection
+batchDataSourceInitializer 실패
+entityManagerFactory 실패
+ApplicationContext 초기화 실패
+```
+
+## 🔍 원인 분석
+
+핵심은 "Batch를 실제 사용하지 않아도" 자동 초기화가 먼저 실행된다는 점입니다.
+
+- 기동 시 `batchDataSourceInitializer`가 DB 연결 시도
+- DB 미연결이면 초기화 단계에서 예외 발생
+- 이후 `entityManagerFactory`, repository, security filter까지 실패 전파
+
+즉, 장애 원인은 DB 자체보다 **부적절한 초기화 정책**이었습니다.
+
+## 🛠️ 해결
+
+### 1) Batch 미사용 환경에서 초기화 비활성화
+
+```yaml
+spring:
+  batch:
+    jdbc:
+      initialize-schema: never
+```
+
+### 2) 환경별 정책 분리
+
+- 로컬/테스트: 필요 시 `embedded`
+- 운영: 명시적 마이그레이션(DDL 도구) 기반 관리
+
+### 3) 필요 시 AutoConfiguration 제외
+
+```yaml
+spring:
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.batch.BatchAutoConfiguration
+```
+
+### 4) 기동 순서 가드레일
+
+- DB 준비 상태 확인 후 앱 기동
+- 헬스체크 기반 재시도 정책 적용
+
+## ✅ 검증
+
+적용 후 확인:
+
+- DB 미연결 시에도 원인 로그가 단순화되고 장애 범위 제한
+- DB 복구 후 앱 재기동 성공
+- 불필요한 Batch 초기화 시도 제거
+
+운영에서는 "DB 순간 장애 -> 앱 전체 기동 실패" 패턴을 크게 줄일 수 있었습니다.
+
+## 📌 교훈
+
+1. 자동 초기화 기본값은 운영 안전성과 다를 수 있다.
+2. 쓰지 않는 기능의 auto-config는 명시적으로 끄는 게 안전하다.
+3. 장애는 단일 에러보다 연쇄 실패 경로를 먼저 차단해야 한다.
+
+## ♻️ 재사용 체크리스트
+
+- [ ] `initialize-schema` 정책이 환경 목적과 일치하는지 확인
+- [ ] Batch 실제 사용 여부 점검 후 auto-config 정리
+- [ ] DB readiness 체크 후 앱 기동 순서 보장
+- [ ] 기동 실패 로그에서 연쇄 실패 지점 추적
+- [ ] 운영 설정 변경 시 롤백 시나리오 확보
+
+## 🔗 관련 글 / 다음 글
+
+- 이전 글: [N+1과 페이지네이션 개선기](/post/32)
+- 다음 글: [2270줄 God Class 분해기](/post/34)
+- 연계편: [DB Deadlock/Lock Timeout 실전 해결기](/post/28)
