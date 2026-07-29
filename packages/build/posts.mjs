@@ -119,7 +119,7 @@ export function readPostsMeta(postsDir) {
     // id는 라우트(/post/:id) 키이므로 충돌하면 글이 조용히 가려집니다.
     throw new Error(
       `중복된 포스트 id가 있습니다: ${[...new Set(duplicates)].join(", ")}. ` +
-        `파일명(확장자 제외)은 src/posts 전체에서 유일해야 합니다.`
+        `파일명(확장자 제외)은 content/posts 전체에서 유일해야 합니다.`
     );
   }
 

@@ -15,10 +15,9 @@ import { readPostsMeta } from "./posts.mjs";
 import { blogMeta } from "./blogMeta.mjs";
 import { absoluteUrl, routePath } from "./siteUrl.mjs";
 import { staticRoutes } from "./routes.mjs";
+import { postsDir, distDir } from "./paths.mjs";
 
-const ROOT = process.cwd();
-const DIST = join(ROOT, "dist");
-const POSTS_DIR = join(ROOT, "src", "posts");
+const DIST = distDir;
 
 const template = readFileSync(join(DIST, "index.html"), "utf8");
 
@@ -130,7 +129,7 @@ for (const page of staticRoutes) {
 }
 
 // ── 포스트 라우트 ──────────────────────────────────────────────
-const posts = readPostsMeta(POSTS_DIR);
+const posts = readPostsMeta(postsDir);
 
 for (const post of posts) {
   const url = absoluteUrl(`/post/${post.id}`);

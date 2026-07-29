@@ -1,9 +1,9 @@
 // ── 포스트 메타데이터 가상 모듈 플러그인 ──────────────────────
-// `virtual:posts-meta` 를 import 하면 src/posts/**/*.mdx 의 frontmatter만
+// `virtual:posts-meta` 를 import 하면 content/posts/**/*.mdx 의 frontmatter만
 // 담긴 배열을 얻습니다. 본문은 포함되지 않으므로 목록 화면이 전체 글 본문을
-// 내려받지 않아도 됩니다. 본문은 src/lib/loadPosts.ts 의 lazy glob이 담당합니다.
+// 내려받지 않아도 됩니다. 본문은 packages/core/src/loadPosts.ts 의 lazy glob이 담당합니다.
 
-import { readPostsMeta } from "../scripts/posts.mjs";
+import { readPostsMeta } from "./posts.mjs";
 
 const VIRTUAL_ID = "virtual:posts-meta";
 const RESOLVED_ID = "\0" + VIRTUAL_ID;

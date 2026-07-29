@@ -2,16 +2,13 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { readPostsMeta } from "./posts.mjs";
+import { postsDir, publicDir } from "./paths.mjs";
 import { siteOrigin, basePath, routePath } from "./siteUrl.mjs";
 import { staticRoutes } from "./routes.mjs";
 
-const ROOT = process.cwd();
-const POSTS_DIR = join(ROOT, "src", "posts");
-const PUBLIC_DIR = join(ROOT, "public");
-
 const today = new Date().toISOString().slice(0, 10);
 
-const posts = readPostsMeta(POSTS_DIR);
+const posts = readPostsMeta(postsDir);
 
 const urls = [
   ...staticRoutes.map(({ route }) => ({ loc: route, lastmod: today })),
@@ -38,7 +35,7 @@ ${urls
 </urlset>
 `;
 
-writeFileSync(join(PUBLIC_DIR, "sitemap.xml"), xml, "utf8");
+writeFileSync(join(publicDir, "sitemap.xml"), xml, "utf8");
 
 const robots = `User-agent: Googlebot
 Allow: /
@@ -59,7 +56,7 @@ Disallow: ${routePath("/admin")}
 Sitemap: ${siteOrigin}${routePath("/sitemap.xml")}
 `;
 
-writeFileSync(join(PUBLIC_DIR, "robots.txt"), robots, "utf8");
+writeFileSync(join(publicDir, "robots.txt"), robots, "utf8");
 
 console.log(
   `sitemap.xml (${urls.length} URLs) / robots.txt 생성 완료 — ${siteOrigin}${basePath}`
