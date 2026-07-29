@@ -1,20 +1,11 @@
 // ── 블로그 전체 설정 파일 ──────────────────────────────────────
-// 이 파일에서 블로그 이름, 소개, 저자, 카테고리를 자유롭게 수정하세요.
+// 블로그 이름·소개·저자는 루트의 blog.config.json 에서 수정하세요.
+// 빌드 스크립트(sitemap / prerender)도 같은 파일을 읽으므로 값이 어긋나지 않습니다.
+// 카테고리는 이 파일 아래 categoryList 를 수정하세요.
 
-export const blogConfig = {
-  name: "Between the Lines",
-  tagline: "오늘을 새롭게 내일을 이롭게 기록합니다.",
-  description: "기록하는 개발자 오태훈의 기술 블로그입니다.",
-  siteUrl: "https://between-the-lines.blog",
-  author: {
-    name: "오태훈",
-    nickname: "RosieOh",
-    email: "dhxogns920@gmail.com",
-    github: "https://github.com/RosieOh",
-    bio: "얻은 지식을 프로젝트에 적용하고, 기록하는 습관으로 배운 것을 남기는 개발자입니다.",
-  },
-  copyright: "© 2025 Between the Lines. All rights reserved.",
-} as const;
+import blogConfigJson from "../../blog.config.json";
+
+export const blogConfig = blogConfigJson;
 
 export const giscusConfig = {
   repo: "RosieOh/RosieTechBlog",
