@@ -4,12 +4,13 @@ import BlogHeader from "@/components/blog/BlogHeader";
 import BlogFooter from "@/components/blog/BlogFooter";
 import BlogArticleCard from "@/components/blog/BlogArticleCard";
 import NotFoundInline from "@/components/blog/NotFoundInline";
-import { getAllPosts } from "@/lib/postStorage";
+import { getPublishedPosts } from "@/lib/postStorage";
+import { byNewest } from "@/data/posts";
 
 const TagPage = () => {
   const { tag } = useParams<{ tag: string }>();
   const decodedTag = decodeURIComponent(tag || "");
-  const allPostsList = getAllPosts();
+  const allPostsList = getPublishedPosts();
 
   const allTags = Array.from(new Set(allPostsList.flatMap((p) => p.tags))).sort();
 
@@ -17,7 +18,7 @@ const TagPage = () => {
     p.tags.some((t) => t.toLowerCase() === decodedTag.toLowerCase())
   );
 
-  const sorted = [...posts].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const sorted = [...posts].sort(byNewest);
 
   // Related tags: tags that appear in the same posts, excluding current
   const relatedTags = Array.from(

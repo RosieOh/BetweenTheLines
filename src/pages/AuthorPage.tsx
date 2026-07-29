@@ -3,17 +3,15 @@ import BlogHeader from "@/components/blog/BlogHeader";
 import BlogFooter from "@/components/blog/BlogFooter";
 import BlogArticleCard from "@/components/blog/BlogArticleCard";
 import NotFoundInline from "@/components/blog/NotFoundInline";
-import { getAllPosts } from "@/lib/postStorage";
+import { getPublishedPosts } from "@/lib/postStorage";
+import { byNewest } from "@/data/posts";
 
 const AuthorPage = () => {
   const { name } = useParams<{ name: string }>();
   const decodedName = decodeURIComponent(name || "");
 
-  const posts = getAllPosts().filter((p) => p.author === decodedName);
-  const sorted = [...posts].sort(
-    (a, b) => new Date(b.date.replace(/\. /g, "-").replace(".", "")).getTime()
-           - new Date(a.date.replace(/\. /g, "-").replace(".", "")).getTime()
-  );
+  const posts = getPublishedPosts().filter((p) => p.author === decodedName);
+  const sorted = [...posts].sort(byNewest);
 
   if (!decodedName || posts.length === 0) {
     return <NotFoundInline message="저자를 찾을 수 없습니다." />;

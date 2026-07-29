@@ -1,11 +1,12 @@
+import { useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { FileText } from "lucide-react";
 import BlogHeader from "@/components/blog/BlogHeader";
 import BlogFooter from "@/components/blog/BlogFooter";
 import BlogArticleCard from "@/components/blog/BlogArticleCard";
 import NotFoundInline from "@/components/blog/NotFoundInline";
-import { categories } from "@/data/posts";
-import { getAllPosts } from "@/lib/postStorage";
+import { categories, byNewest } from "@/data/posts";
+import { getPublishedPosts } from "@/lib/postStorage";
 import { categoryMap, categoryList } from "@/lib/blogConfig";
 
 const CategoryPage = () => {
@@ -20,12 +21,11 @@ const CategoryPage = () => {
   const isAll = !matchedCat;
   const meta = matchedCat ? categoryMap[matchedCat] : null;
 
-  const allPosts = getAllPosts();
-  const posts = isAll ? allPosts : allPosts.filter((p) => p.category === matchedCat);
-  const sorted = [...posts].sort(
-    (a, b) => new Date(b.date.replace(/\. /g, "-").replace(".", "")).getTime()
-           - new Date(a.date.replace(/\. /g, "-").replace(".", "")).getTime()
-  );
+  const sorted = useMemo(() => {
+    const allPosts = getPublishedPosts();
+    const posts = isAll ? allPosts : allPosts.filter((p) => p.category === matchedCat);
+    return [...posts].sort(byNewest);
+  }, [isAll, matchedCat]);
 
   if (!isAll && !meta) {
     return <NotFoundInline message="카테고리를 찾을 수 없습니다." />;
@@ -67,7 +67,7 @@ const CategoryPage = () => {
             {/* Article count */}
             <div className="mt-6">
               <p className="text-[11px] text-muted-foreground mb-1">아티클 수</p>
-              <p className="text-[22px] font-extrabold text-foreground">{posts.length}</p>
+              <p className="text-[22px] font-extrabold text-foreground">{sorted.length}</p>
             </div>
           </div>
         </section>
