@@ -1,4 +1,5 @@
-import type { PostData } from "@/data/posts";
+import { postsMeta } from "virtual:posts-meta";
+import type { PostMeta } from "@/data/posts";
 
 import thumbArchitecture from "@/assets/thumb-architecture.jpg";
 import thumbAiReview from "@/assets/thumb-ai-review.jpg";
@@ -14,85 +15,58 @@ const thumbnailMap: Record<string, string> = {
   cicd: thumbCicd,
 };
 
-// Vite import.meta.glob으로 src/posts 하위 모든 mdx를 raw 문자열로 로드
-const rawFiles = import.meta.glob("../posts/**/*.mdx", {
+/**
+ * 본문 로더 — eager가 아니므로 각 .mdx가 별도 청크가 되고
+ * 실제로 그 글을 열 때만 네트워크를 탑니다.
+ */
+const contentLoaders = import.meta.glob("../posts/**/*.mdx", {
   query: "?raw",
   import: "default",
-  eager: true,
-}) as Record<string, string>;
+}) as Record<string, () => Promise<string>>;
 
-// gray-matter 없이 브라우저에서 동작하는 간단한 frontmatter 파서
-function parseFrontmatter(raw: string): { data: Record<string, unknown>; content: string } {
-  const match = raw.match(/^---[\r\n]+([\s\S]*?)[\r\n]+---[\r\n]*([\s\S]*)$/);
-  if (!match) return { data: {}, content: raw };
-
-  const yamlBlock = match[1];
-  const content = match[2];
-  const data: Record<string, unknown> = {};
-
-  for (const line of yamlBlock.split(/\r?\n/)) {
-    const colonIdx = line.indexOf(":");
-    if (colonIdx === -1) continue;
-
-    const key = line.slice(0, colonIdx).trim();
-    const rawVal = line.slice(colonIdx + 1).trim();
-
-    if (!key) continue;
-
-    // 배열: ['a', 'b'] 또는 ["a", "b"]
-    if (rawVal.startsWith("[") && rawVal.endsWith("]")) {
-      data[key] = rawVal
-        .slice(1, -1)
-        .split(",")
-        .map((s) => s.trim().replace(/^['"]|['"]$/g, ""))
-        .filter(Boolean);
-    } else {
-      // 따옴표 제거
-      data[key] = rawVal.replace(/^['"]|['"]$/g, "");
-    }
-  }
-
-  return { data, content };
+/** 파일 경로 → 포스트 id(확장자 없는 파일명) */
+function idFromPath(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1).replace(/\.mdx$/, "");
 }
 
-function formatDate(raw: unknown): string {
-  if (!raw) return "";
-  const str = String(raw).trim();
-  const d = new Date(str);
-  if (isNaN(d.getTime())) return str;
-  return `${d.getFullYear()}. ${String(d.getMonth() + 1).padStart(2, "0")}. ${String(d.getDate()).padStart(2, "0")}.`;
+const loaderById = new Map(
+  Object.entries(contentLoaders).map(([path, loader]) => [idFromPath(path), loader])
+);
+
+const contentCache = new Map<string, string>();
+
+/** frontmatter 블록을 제거한 본문만 돌려줍니다. */
+function stripFrontmatter(raw: string): string {
+  const match = raw.match(/^---[\r\n]+[\s\S]*?[\r\n]+---[\r\n]*([\s\S]*)$/);
+  return (match ? match[1] : raw).trim();
 }
 
-function estimateReadTime(content: string): string {
-  const words = content.trim().split(/\s+/).length;
-  return `${Math.max(1, Math.round(words / 200))}분`;
+/** 단일 포스트 본문을 로드합니다. 없는 id면 null. */
+export async function loadPostContent(id: string): Promise<string | null> {
+  const cached = contentCache.get(id);
+  if (cached !== undefined) return cached;
+
+  const loader = loaderById.get(id);
+  if (!loader) return null;
+
+  const content = stripFrontmatter(await loader());
+  contentCache.set(id, content);
+  return content;
 }
 
-export function loadPostsFromFiles(): PostData[] {
-  return Object.entries(rawFiles)
-    .map(([path, raw]) => {
-      const { data, content } = parseFrontmatter(raw);
-      const id = path.split("/").pop()?.replace(".mdx", "") ?? "";
+/**
+ * 전 포스트 본문을 로드합니다 — 전문 검색 전용.
+ * 목록/상세 경로에서는 절대 호출하지 마세요(모든 청크를 끌어옵니다).
+ */
+export async function loadAllPostContents(): Promise<Map<string, string>> {
+  await Promise.all([...loaderById.keys()].map((id) => loadPostContent(id)));
+  return contentCache;
+}
 
-      return {
-        id,
-        title: String(data.title ?? ""),
-        excerpt: String(data.description ?? data.excerpt ?? ""),
-        category: String(data.category ?? "SpringBoot"),
-        author: String(data.author ?? "오태훈"),
-        date: formatDate(data.date),
-        readTime: String(data.readTime ?? estimateReadTime(content)),
-        thumbnail: thumbnailMap[String(data.thumbnail ?? "architecture")] ?? thumbArchitecture,
-        tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
-        content: content.trim(),
-        series: data.series ? String(data.series) : undefined,
-        seriesOrder: data.seriesOrder ? Number(data.seriesOrder) : undefined,
-        seriesLabel: data.seriesLabel ? String(data.seriesLabel) : undefined,
-      } satisfies PostData;
-    })
-    .sort((a, b) => {
-      const da = a.date.replace(/\. /g, "-").replace(/\.$/, "").trim();
-      const db = b.date.replace(/\. /g, "-").replace(/\.$/, "").trim();
-      return new Date(db).getTime() - new Date(da).getTime();
-    });
+/** 빌드 타임에 추출된 메타데이터 — 이미 rawDate 내림차순으로 정렬돼 있습니다. */
+export function loadPostsFromFiles(): PostMeta[] {
+  return postsMeta.map((meta) => ({
+    ...meta,
+    thumbnail: thumbnailMap[meta.thumbnail] ?? thumbArchitecture,
+  }));
 }
