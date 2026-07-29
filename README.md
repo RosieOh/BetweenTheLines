@@ -2,30 +2,51 @@
 
 기록하는 개발자 오태훈의 기술 블로그. **https://rosieoh.github.io/BetweenTheLines/**
 
-Vite + React 18 + TypeScript + Tailwind 로 만든 정적 블로그입니다. 백엔드가 없고
-`src/posts/**/*.mdx` 파일이 콘텐츠 소스입니다.
+Vite + React 18 + TypeScript + Tailwind 기반의 정적 블로그입니다. 백엔드가 없고
+`content/posts/**/*.mdx` 파일이 콘텐츠 소스입니다.
+
+## 구조
+
+npm workspaces 모노레포입니다.
+
+```
+apps/
+  blog/      @btl/blog    공개 블로그 — GitHub Pages 로 배포
+  admin/     @btl/admin   관리자 — 로컬 저작 도구, 배포하지 않음
+packages/
+  core/      @btl/core    공유 도메인 (포스트·설정·스토리지·디자인 토큰)
+  build/     @btl/build   빌드 타임 도구 (frontmatter 파서·sitemap·프리렌더)
+content/
+  posts/                  글 (.mdx)
+blog.config.json          블로그 이름·저자 (런타임과 빌드가 공유하는 단일 소스)
+tailwind.preset.ts        두 앱이 공유하는 디자인 토큰
+```
+
+두 앱은 `@btl/core` 배럴을 통해서만 공유 코드를 씁니다. 앱끼리는 서로 의존하지 않습니다.
 
 ## 시작하기
 
 ```sh
 npm install
-npm run dev          # http://localhost:8080
+npm run dev          # 블로그   http://localhost:8080
+npm run dev:admin    # 관리자   http://localhost:8081
 ```
 
 ## 스크립트
 
 | 명령 | 설명 |
 | --- | --- |
-| `npm run dev` | 개발 서버 |
-| `npm run build` | sitemap 생성 → Vite 빌드 → 라우트별 프리렌더 |
-| `npm run preview` | 빌드 결과 미리보기 |
-| `npm run lint` | ESLint |
-| `npm run typecheck` | 타입 검사 |
+| `npm run dev` / `dev:admin` | 개발 서버 (블로그 / 관리자) |
+| `npm run build` | 블로그: sitemap 생성 → Vite 빌드 → 라우트별 프리렌더 |
+| `npm run build:admin` | 관리자 빌드 (배포 대상 아님, 검증용) |
+| `npm run build:all` | 둘 다 |
+| `npm run lint` | ESLint (워크스페이스 전체) |
+| `npm run typecheck` | 패키지·앱별 타입 검사 |
 | `npm test` | Vitest |
 
 ## 글 쓰기
 
-`src/posts/` 아래 아무 곳에나 `.mdx` 파일을 추가하면 됩니다. **파일명(확장자 제외)이
+`content/posts/` 아래 아무 곳에나 `.mdx` 파일을 추가하면 됩니다. **파일명(확장자 제외)이
 글 id 이자 URL** 이므로 (`22.mdx` → `/post/22`) 전체에서 유일해야 합니다. 중복되면
 빌드가 실패합니다.
 
@@ -50,25 +71,6 @@ seriesLabel: '심화편 11'            # 선택
 `npm test` 가 모든 글의 frontmatter(필수 필드, 날짜 형식, 정의된 카테고리, id 중복)를
 검사하므로 오타는 CI에서 걸립니다.
 
-## 구조
-
-```
-blog.config.json          블로그 이름·저자 (런타임과 빌드 스크립트가 공유하는 단일 소스)
-plugins/
-  vite-plugin-posts.mjs   .mdx frontmatter → virtual:posts-meta 가상 모듈
-scripts/
-  posts.mjs               frontmatter 파서 (빌드 타임 단일 소스)
-  routes.mjs              정적 라우트 목록 (sitemap/프리렌더 공유)
-  siteUrl.mjs             배포 주소 규칙
-  generate-sitemap.mjs    sitemap.xml + robots.txt 생성
-  prerender.mjs           라우트별 정적 HTML + OG/JSON-LD 주입
-src/
-  posts/                  글 (.mdx)
-  data/posts.ts           PostMeta 타입 + 정렬 비교자
-  lib/loadPosts.ts        메타는 즉시, 본문은 글 단위 청크로 지연 로드
-  lib/blogConfig.ts       카테고리 정의
-```
-
 ### 성능상 중요한 규칙
 
 목록 화면이 전체 글 본문을 내려받지 않도록 **메타데이터와 본문이 분리**돼 있습니다.
@@ -85,6 +87,7 @@ src/
 ## 배포
 
 `main` 브랜치 푸시 시 GitHub Actions 가 lint → typecheck → test → build → Pages 배포를 수행합니다.
+**배포되는 것은 `apps/blog` 뿐입니다.**
 
 주소 설정은 `.github/workflows/deploy-pages.yml` 의 env 두 개가 단일 소스입니다.
 
@@ -94,12 +97,22 @@ VITE_BASE_PATH: /BetweenTheLines/
 ```
 
 커스텀 도메인으로 옮길 때는 `SITE_ORIGIN` 을 바꾸고 `VITE_BASE_PATH` 를 `/` 로 되돌린 뒤
-`public/CNAME` 에 도메인을 넣으면 sitemap·robots·프리렌더 URL이 함께 따라옵니다.
+`apps/blog/public/CNAME` 에 도메인을 넣으면 sitemap·robots·프리렌더 URL이 함께 따라옵니다.
+
+## 관리자 앱에 대해
+
+`apps/admin` 은 **로컬 저작 도구**이며 GitHub Pages 로 배포하지 않습니다.
+
+- 비밀번호가 번들에 그대로 들어가므로 공개 호스팅에 올리면 의미가 없습니다.
+  CI 가 공개 배포본에 관리자 코드가 섞이지 않았는지 매번 검사합니다.
+- **데이터가 브라우저 localStorage 에만 저장됩니다.** 방문자가 남긴 문의·구독은
+  그 방문자의 브라우저에 저장되므로 관리자 화면에서는 볼 수 없습니다.
+  이 기능들이 실제로 동작하려면 백엔드가 필요합니다.
+- 실제로 동작하는 발행 경로는 **PostEditor 의 MDX 내보내기**입니다.
+  내려받은 `.mdx` 를 `content/posts/` 에 커밋하면 CI 가 배포합니다.
 
 ## 알아둘 점
 
-- **관리자 화면(`/admin`)은 프론트 전용 데모입니다.** 비밀번호가 번들에 그대로 들어 있고
-  데이터는 localStorage 에만 저장됩니다. 실제 접근 제어가 아닙니다. (robots.txt 에서 제외)
 - **프리렌더는 `<head>` 메타데이터까지입니다.** 공유 카드와 검색 스니펫에는 충분하지만
   본문 HTML을 서버에서 렌더하는 완전한 SSR은 아닙니다.
 - 애니메이션은 `LazyMotion`(strict) 아래에서 동작합니다. 컴포넌트에서 `motion.*` 대신
