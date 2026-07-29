@@ -12,6 +12,8 @@ import {
 import AdminLayout from "@/components/blog/AdminLayout";
 import type { PostData } from "@/data/posts";
 import { categoryList } from "@/lib/blogConfig";
+import { toIsoDate, formatDisplayDate } from "@/lib/utils";
+import { loadPostContent } from "@/lib/loadPosts";
 
 import thumbArchitecture from "@/assets/thumb-architecture.jpg";
 import thumbAiReview from "@/assets/thumb-ai-review.jpg";
@@ -27,35 +29,38 @@ const THUMBNAIL_OPTIONS = [
   { label: "CI/CD", src: thumbCicd },
 ];
 
-const today = () => {
-  const d = new Date();
-  return `${d.getFullYear()}. ${String(d.getMonth() + 1).padStart(2, "0")}. ${String(d.getDate()).padStart(2, "0")}.`;
-};
+/** 에디터가 다루는 폼 값 — 본문은 항상 문자열입니다. */
+type EditorForm = Omit<PostData, "id" | "content"> & { content: string };
 
-const emptyPost = (): Omit<PostData, "id"> => ({
-  title: "",
-  excerpt: "",
-  category: categoryList[0]?.key ?? "",
-  author: "",
-  date: today(),
-  readTime: "5분",
-  thumbnail: THUMBNAIL_OPTIONS[0].src,
-  tags: [],
-  content: "",
-  status: "published",
-});
+const emptyPost = (): EditorForm => {
+  const rawDate = toIsoDate();
+  return {
+    title: "",
+    excerpt: "",
+    category: categoryList[0]?.key ?? "",
+    author: "",
+    rawDate,
+    date: formatDisplayDate(rawDate),
+    readTime: "5분",
+    thumbnail: THUMBNAIL_OPTIONS[0].src,
+    tags: [],
+    content: "",
+    status: "published",
+  };
+};
 
 const PostEditor = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const isEdit = !!id;
 
-  const [form, setForm] = useState<Omit<PostData, "id">>(emptyPost());
+  const [form, setForm] = useState<EditorForm>(emptyPost());
   const [tagInput, setTagInput] = useState("");
   const [customThumb, setCustomThumb] = useState("");
   const [preview, setPreview] = useState(false);
   const [errors, setErrors] = useState<Partial<Record<keyof PostData | "tagInput", string>>>({});
   const [saved, setSaved] = useState(false);
+  const [loadingContent, setLoadingContent] = useState(false);
   const handleSaveRef = useRef<() => void>(() => {});
 
   useEffect(() => {
@@ -82,24 +87,46 @@ const PostEditor = () => {
   }, []);
 
   const calcReadTime = () => {
-    const words = form.content.trim().split(/\s+/).filter(Boolean).length;
-    const minutes = Math.max(1, Math.round(words / 200));
+    // 한국어 본문 기준 분당 500자 — scripts/posts.mjs 의 추정치와 같은 기준입니다.
+    const chars = form.content.replace(/\s+/g, "").length;
+    const minutes = Math.max(1, Math.round(chars / 500));
     setForm((f) => ({ ...f, readTime: `${minutes}분` }));
   };
 
   useEffect(() => {
     if (!isAuthenticated()) { navigate("/admin"); return; }
-    if (isEdit && id) {
-      const post = getAllPosts().find((p) => p.id === id);
-      if (post) {
-        const { id: _id, ...rest } = post;
-        setForm(rest);
-        const isPreset = THUMBNAIL_OPTIONS.some((t) => t.src === post.thumbnail);
-        if (!isPreset) setCustomThumb(post.thumbnail);
-      } else {
-        navigate("/admin/dashboard");
-      }
+    if (!isEdit || !id) return;
+
+    const post = getAllPosts().find((p) => p.id === id);
+    if (!post) {
+      navigate("/admin/dashboard");
+      return;
     }
+
+    const { id: _id, content, ...rest } = post;
+    const isPreset = THUMBNAIL_OPTIONS.some((t) => t.src === post.thumbnail);
+    if (!isPreset) setCustomThumb(post.thumbnail);
+
+    // 관리자 저장 글은 본문을 들고 있지만, .mdx 기반 글은 청크로 분리돼 있습니다.
+    if (content !== undefined) {
+      setForm({ ...rest, content });
+      return;
+    }
+
+    let cancelled = false;
+    setForm({ ...rest, content: "" });
+    setLoadingContent(true);
+
+    loadPostContent(id)
+      .then((loaded) => {
+        if (!cancelled && loaded !== null) setForm((f) => ({ ...f, content: loaded }));
+      })
+      .catch((err) => console.error(`[PostEditor] 본문 로드 실패: ${id}`, err))
+      .finally(() => {
+        if (!cancelled) setLoadingContent(false);
+      });
+
+    return () => { cancelled = true; };
   }, [id, isEdit, navigate]);
 
   const addTag = () => {
@@ -127,7 +154,7 @@ const PostEditor = () => {
 
   const handleExportMdx = () => {
     const slug = (form.title || "untitled").toLowerCase().replace(/\s+/g, "-").replace(/[^\w-]/g, "");
-    const isoDate = new Date().toISOString().split("T")[0];
+    const isoDate = form.rawDate || toIsoDate();
     const mdx = [
       "---",
       `title: '${form.title}'`,
@@ -257,10 +284,11 @@ const PostEditor = () => {
                 <textarea
                   id="content"
                   value={form.content}
+                  disabled={loadingContent}
                   onChange={(e) => { setForm((f) => ({ ...f, content: e.target.value })); setErrors((p) => ({ ...p, content: undefined })); }}
-                  placeholder={`## 들어가며\n\n본문을 Markdown으로 작성하세요.\n\n## 소제목\n\n내용...`}
+                  placeholder={loadingContent ? "본문을 불러오는 중..." : `## 들어가며\n\n본문을 Markdown으로 작성하세요.\n\n## 소제목\n\n내용...`}
                   rows={20}
-                  className={`${inputCls(errors.content)} h-auto py-3 font-mono text-[13px] resize-y`}
+                  className={`${inputCls(errors.content)} h-auto py-3 font-mono text-[13px] resize-y disabled:opacity-60`}
                 />
               )}
             </Field>
