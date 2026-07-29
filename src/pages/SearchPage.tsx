@@ -1,72 +1,92 @@
 import { useSearchParams, Link } from "react-router-dom";
-import { Search, X } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Search, X, Loader2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
 import BlogHeader from "@/components/blog/BlogHeader";
 import BlogFooter from "@/components/blog/BlogFooter";
 import BlogArticleCard from "@/components/blog/BlogArticleCard";
 import { categories } from "@/data/posts";
-import { getAllPosts } from "@/lib/postStorage";
-import type { PostData } from "@/data/posts";
+import type { PostMeta } from "@/data/posts";
+import { searchPosts } from "@/lib/searchPosts";
 
-function searchPosts(query: string, category: string): PostData[] {
-  if (!query.trim()) return [];
-  const q = query.toLowerCase();
-  return getAllPosts().filter((post) => {
-    const matchesCategory = category === "전체" || post.category === category;
-    const matchesQuery =
-      post.title.toLowerCase().includes(q) ||
-      post.excerpt.toLowerCase().includes(q) ||
-      post.content.toLowerCase().includes(q) ||
-      post.tags.some((t) => t.toLowerCase().includes(q)) ||
-      post.author.toLowerCase().includes(q);
-    return matchesCategory && matchesQuery;
-  });
-}
+const DEBOUNCE_MS = 300;
 
 const SearchPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialQuery = searchParams.get("q") || "";
-  const initialCategory = searchParams.get("category") || "전체";
+  const activeQuery = searchParams.get("q") || "";
+  const activeCategory = searchParams.get("category") || "전체";
 
-  const [query, setQuery] = useState(initialQuery);
-  const [selectedCategory, setSelectedCategory] = useState(initialCategory);
-  const [results, setResults] = useState<PostData[]>([]);
-  const [hasSearched, setHasSearched] = useState(!!initialQuery);
+  const [query, setQuery] = useState(activeQuery);
+  const [selectedCategory, setSelectedCategory] = useState(activeCategory);
+  const [results, setResults] = useState<PostMeta[]>([]);
+  const [searching, setSearching] = useState(false);
 
+  const hasSearched = activeQuery.length > 0;
+
+  /** URL 쿼리스트링이 검색 상태의 단일 소스입니다 — 뒤로가기/링크 공유가 그대로 동작합니다. */
+  const commitSearch = useCallback(
+    (q: string, cat: string) => {
+      const params: Record<string, string> = {};
+      if (q.trim()) params.q = q.trim();
+      if (cat !== "전체") params.category = cat;
+      setSearchParams(params, { replace: true });
+    },
+    [setSearchParams]
+  );
+
+  // 입력 디바운스 — 타이핑 중 매 글자마다 전문 검색이 돌지 않도록 합니다.
   useEffect(() => {
-    if (initialQuery) {
-      setResults(searchPosts(initialQuery, initialCategory));
-      setHasSearched(true);
-    }
-  }, [initialQuery, initialCategory]);
+    if (query.trim() === activeQuery) return;
+    const timer = setTimeout(() => commitSearch(query, selectedCategory), DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query, activeQuery, selectedCategory, commitSearch]);
 
-  const handleSearch = (q: string, cat: string) => {
-    const params: Record<string, string> = {};
-    if (q) params.q = q;
-    if (cat !== "전체") params.category = cat;
-    setSearchParams(params);
-    setResults(searchPosts(q, cat));
-    setHasSearched(true);
-  };
+  // 확정된 쿼리로 검색 실행 — 본문 청크는 이 시점에만 로드됩니다.
+  useEffect(() => {
+    if (!activeQuery) {
+      setResults([]);
+      setSearching(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSearching(true);
+
+    searchPosts(activeQuery, activeCategory)
+      .then((found) => {
+        if (!cancelled) setResults(found);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("[SearchPage] 검색에 실패했습니다.", err);
+        setResults([]);
+      })
+      .finally(() => {
+        if (!cancelled) setSearching(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeQuery, activeCategory]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      handleSearch(query, selectedCategory);
-    }
+    if (e.key === "Enter") commitSearch(query, selectedCategory);
   };
 
   const handleCategoryChange = (cat: string) => {
     setSelectedCategory(cat);
-    if (hasSearched) {
-      handleSearch(query, cat);
-    }
+    commitSearch(query, cat);
+  };
+
+  const runSearch = (term: string) => {
+    setQuery(term);
+    commitSearch(term, selectedCategory);
   };
 
   const clearSearch = () => {
     setQuery("");
     setResults([]);
-    setHasSearched(false);
-    setSearchParams({});
+    setSearchParams({}, { replace: true });
   };
 
   return (
@@ -120,7 +140,7 @@ const SearchPage = () => {
           </div>
 
           <button
-            onClick={() => handleSearch(query, selectedCategory)}
+            onClick={() => commitSearch(query, selectedCategory)}
             className="mt-4 px-5 py-2.5 rounded-full bg-primary text-primary-foreground text-[13px] font-semibold hover:opacity-90 transition-opacity"
           >
             검색
@@ -128,7 +148,14 @@ const SearchPage = () => {
         </div>
 
         {/* Results */}
-        {hasSearched && (
+        {hasSearched && searching && (
+          <div className="flex items-center justify-center gap-2 py-24 text-muted-foreground">
+            <Loader2 size={16} className="animate-spin" />
+            <span className="text-[14px]">검색 중...</span>
+          </div>
+        )}
+
+        {hasSearched && !searching && (
           <div aria-live="polite" aria-atomic="true">
             <div className="flex items-center justify-between mb-4">
               <p className="text-[14px] text-muted-foreground">
@@ -168,10 +195,7 @@ const SearchPage = () => {
                   {["Kafka", "AI", "Docker", "Remote", "Security"].map((tag) => (
                     <button
                       key={tag}
-                      onClick={() => {
-                        setQuery(tag);
-                        handleSearch(tag, selectedCategory);
-                      }}
+                      onClick={() => runSearch(tag)}
                       className="px-3 py-1.5 rounded-full bg-secondary border border-border text-[13px] text-muted-foreground hover:text-foreground transition-colors"
                     >
                       {tag}
@@ -200,10 +224,7 @@ const SearchPage = () => {
                 {["Kafka", "AI", "CI/CD", "Remote", "Security", "Architecture"].map((tag) => (
                   <button
                     key={tag}
-                    onClick={() => {
-                      setQuery(tag);
-                      handleSearch(tag, selectedCategory);
-                    }}
+                    onClick={() => runSearch(tag)}
                     className="px-3 py-1.5 rounded-full bg-secondary border border-border text-[13px] text-muted-foreground hover:text-foreground transition-colors"
                   >
                     {tag}
