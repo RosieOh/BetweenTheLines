@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { getPublishedPosts } from "@/lib/postStorage";
+import { getPublishedPosts } from "@btl/core";
 
 const BlogSidebar = () => {
   const allPosts = getPublishedPosts();

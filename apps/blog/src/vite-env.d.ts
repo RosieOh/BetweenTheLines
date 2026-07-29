@@ -1,7 +1,7 @@
+import type { PostMeta } from "@btl/core";
 /// <reference types="vite/client" />
 
 declare module "virtual:posts-meta" {
-  import type { PostMeta } from "@/data/posts";
 
   /**
    * plugins/vite-plugin-posts.mjs 가 빌드 타임에 주입하는 포스트 메타데이터.

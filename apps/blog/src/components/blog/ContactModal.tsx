@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { X, Send, CheckCircle } from "lucide-react";
 import { AnimatePresence, m } from "framer-motion";
-import { validateEmail } from "@/lib/utils";
-import { saveInquiry } from "@/lib/postStorage";
+import { validateEmail, saveInquiry } from "@btl/core";
 
 interface ContactModalProps {
   open: boolean;

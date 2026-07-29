@@ -5,9 +5,7 @@ import BlogHeader from "@/components/blog/BlogHeader";
 import BlogFooter from "@/components/blog/BlogFooter";
 import BlogArticleCard from "@/components/blog/BlogArticleCard";
 import NotFoundInline from "@/components/blog/NotFoundInline";
-import { categories, byNewest } from "@/data/posts";
-import { getPublishedPosts } from "@/lib/postStorage";
-import { categoryMap, categoryList } from "@/lib/blogConfig";
+import { categories, byNewest, getPublishedPosts, categoryMap, categoryList } from "@btl/core";
 
 const CategoryPage = () => {
   const { category } = useParams<{ category: string }>();

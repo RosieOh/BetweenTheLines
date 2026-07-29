@@ -17,11 +17,6 @@ const TagPage = lazy(() => import("./pages/TagPage"));
 const AuthorPage = lazy(() => import("./pages/AuthorPage"));
 const Engineering = lazy(() => import("./pages/Engineering"));
 const About = lazy(() => import("./pages/About"));
-const AdminLogin = lazy(() => import("./pages/admin/AdminLogin"));
-const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
-const PostEditor = lazy(() => import("./pages/admin/PostEditor"));
-const AdminInquiries = lazy(() => import("./pages/admin/AdminInquiries"));
-const AdminSubscribers = lazy(() => import("./pages/admin/AdminSubscribers"));
 const Newsletter = lazy(() => import("./pages/Newsletter"));
 
 const PageFallback = () => (
@@ -56,13 +51,7 @@ const App = () => (
               <Route path="/about" element={<About />} />
               <Route path="/newsletter" element={<Newsletter />} />
 
-              {/* Admin */}
-              <Route path="/admin" element={<AdminLogin />} />
-              <Route path="/admin/dashboard" element={<AdminDashboard />} />
-              <Route path="/admin/posts/new" element={<PostEditor />} />
-              <Route path="/admin/posts/:id/edit" element={<PostEditor />} />
-              <Route path="/admin/inquiries" element={<AdminInquiries />} />
-              <Route path="/admin/subscribers" element={<AdminSubscribers />} />
+              {/* 관리자 화면은 apps/admin 으로 분리됐습니다 — npm run dev:admin */}
 
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />

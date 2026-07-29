@@ -12,13 +12,9 @@ import ReadingProgressBar from "@/components/blog/ReadingProgressBar";
 import ScrollToTop from "@/components/blog/ScrollToTop";
 import GiscusComments from "@/components/blog/GiscusComments";
 import NotFoundInline from "@/components/blog/NotFoundInline";
-import { getAllPosts } from "@/lib/postStorage";
-import { loadPostContent } from "@/lib/loadPosts";
-import { categoryStyles } from "@/lib/categoryConfig";
-import { sanitizeHref } from "@/lib/utils";
 import { useLike } from "@/lib/useLike";
 import { SyntaxHighlighter, resolveLanguage } from "@/lib/syntaxHighlighter";
-import { blogConfig } from "@/lib/blogConfig";
+import { getAllPosts, loadPostContent, categoryStyles, sanitizeHref, blogConfig } from "@btl/core";
 
 interface Heading {
   level: number;

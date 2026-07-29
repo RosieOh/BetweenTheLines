@@ -4,8 +4,7 @@ import BlogHeader from "@/components/blog/BlogHeader";
 import BlogFooter from "@/components/blog/BlogFooter";
 import BlogArticleCard from "@/components/blog/BlogArticleCard";
 import NotFoundInline from "@/components/blog/NotFoundInline";
-import { getPublishedPosts } from "@/lib/postStorage";
-import { byNewest } from "@/data/posts";
+import { getPublishedPosts, byNewest } from "@btl/core";
 
 const TagPage = () => {
   const { tag } = useParams<{ tag: string }>();

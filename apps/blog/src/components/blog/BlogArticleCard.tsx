@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { m } from "framer-motion";
-import type { PostMeta } from "@/data/posts";
-import { categoryStyles } from "@/lib/categoryConfig";
+import type { PostMeta } from "@btl/core";
+import { categoryStyles } from "@btl/core";
 
 interface BlogArticleCardProps {
   post: PostMeta;

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { giscusConfig } from "@/lib/blogConfig";
+import { giscusConfig } from "@btl/core";
 
 const GiscusComments = () => {
   const containerRef = useRef<HTMLDivElement>(null);

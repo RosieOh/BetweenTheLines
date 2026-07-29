@@ -1,10 +1,9 @@
 import { useState, useMemo } from "react";
 import { ChevronLeft, ChevronRight, ArrowUpDown, FileText } from "lucide-react";
 import { Link } from "react-router-dom";
-import { categories, byNewest, byOldest } from "@/data/posts";
-import { getPublishedPosts } from "@/lib/postStorage";
 import BlogArticleCard from "./BlogArticleCard";
 import BlogSidebar from "./BlogSidebar";
+import { categories, byNewest, byOldest, getPublishedPosts } from "@btl/core";
 
 const PAGE_SIZE = 6;
 const FEATURED_SERIES_KEY = "storyg-realworld-series";

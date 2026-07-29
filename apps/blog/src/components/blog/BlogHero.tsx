@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
-import { getAllPosts } from "@/lib/postStorage";
 import { AnimatePresence, m } from "framer-motion";
+import { getAllPosts } from "@btl/core";
 
 const BlogHero = () => {
   const featuredPosts = getAllPosts().slice(0, 3);

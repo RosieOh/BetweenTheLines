@@ -4,9 +4,9 @@ import { useState, useEffect, useCallback } from "react";
 import BlogHeader from "@/components/blog/BlogHeader";
 import BlogFooter from "@/components/blog/BlogFooter";
 import BlogArticleCard from "@/components/blog/BlogArticleCard";
-import { categories } from "@/data/posts";
-import type { PostMeta } from "@/data/posts";
 import { searchPosts } from "@/lib/searchPosts";
+import type { PostMeta } from "@btl/core";
+import { categories } from "@btl/core";
 
 const DEBOUNCE_MS = 300;
 

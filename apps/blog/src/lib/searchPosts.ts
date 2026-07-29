@@ -1,7 +1,5 @@
-import type { PostMeta } from "@/data/posts";
-import { byNewest } from "@/data/posts";
-import { getPublishedPosts } from "@/lib/postStorage";
-import { loadAllPostContents } from "@/lib/loadPosts";
+import type { PostMeta } from "@btl/core";
+import { byNewest, getPublishedPosts, loadAllPostContents } from "@btl/core";
 
 /**
  * 전문 검색.

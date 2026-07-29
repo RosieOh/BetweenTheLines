@@ -2,8 +2,7 @@ import { Link } from "react-router-dom";
 import BlogHeader from "@/components/blog/BlogHeader";
 import BlogFooter from "@/components/blog/BlogFooter";
 import BlogArticleCard from "@/components/blog/BlogArticleCard";
-import { getAllPosts } from "@/lib/postStorage";
-import { categoryList } from "@/lib/blogConfig";
+import { getAllPosts, categoryList } from "@btl/core";
 
 const Engineering = () => {
   const allPosts = getAllPosts();
