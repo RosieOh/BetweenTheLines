@@ -1,10 +1,11 @@
+// 블로그·관리자 앱이 공유하는 디자인 토큰 프리셋입니다.
+// 각 앱의 tailwind.config.ts 가 이 프리셋을 불러오고 content 글롭만 따로 지정합니다.
 import type { Config } from "tailwindcss";
 import tailwindcssAnimate from "tailwindcss-animate";
 import typography from "@tailwindcss/typography";
 
-export default {
-  darkMode: ["class"],
-  content: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
+const preset: Omit<Config, "content"> = {
+  darkMode: "class",
   prefix: "",
   theme: {
     container: {
@@ -99,4 +100,6 @@ export default {
     },
   },
   plugins: [tailwindcssAnimate, typography],
-} satisfies Config;
+};
+
+export default preset;
