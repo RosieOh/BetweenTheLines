@@ -14,6 +14,13 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+env:
+  # 배포 주소 단일 소스 — sitemap / robots / prerender 가 모두 참조합니다.
+  # 커스텀 도메인으로 옮길 때는 SITE_ORIGIN 을 바꾸고 VITE_BASE_PATH 를 / 로 되돌린 뒤
+  # public/CNAME 을 다시 추가하세요.
+  SITE_ORIGIN: https://rosieoh.github.io
+  VITE_BASE_PATH: /BetweenTheLines/
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -30,13 +37,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build site
-        env:
-          VITE_BASE_PATH: /BetweenTheLines/
-        run: npm run build
+      - name: Lint
+        run: npm run lint
 
-      - name: SPA fallback for GitHub Pages
-        run: cp dist/index.html dist/404.html
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      # sitemap 생성 → vite build → 라우트별 정적 HTML 프리렌더(404.html 포함)
+      - name: Build site
+        run: npm run build
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
