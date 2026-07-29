@@ -17,7 +17,7 @@ concurrency:
 env:
   # 배포 주소 단일 소스 — sitemap / robots / prerender 가 모두 참조합니다.
   # 커스텀 도메인으로 옮길 때는 SITE_ORIGIN 을 바꾸고 VITE_BASE_PATH 를 / 로 되돌린 뒤
-  # public/CNAME 을 다시 추가하세요.
+  # apps/blog/public/CNAME 을 추가하세요.
   SITE_ORIGIN: https://rosieoh.github.io
   VITE_BASE_PATH: /BetweenTheLines/
 
@@ -46,8 +46,10 @@ jobs:
       - name: Test
         run: npm test
 
-      # sitemap 생성 → vite build → 라우트별 정적 HTML 프리렌더(404.html 포함)
-      - name: Build site
+      # 공개 블로그(@btl/blog)만 배포합니다.
+      # 관리자 앱(@btl/admin)은 비밀번호가 번들에 포함된 로컬 저작 도구이므로
+      # 의도적으로 배포 대상에서 제외합니다 — CI 에서 빌드 검증만 합니다.
+      - name: Build blog
         run: npm run build
 
       - name: Setup GitHub Pages
@@ -56,7 +58,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./dist
+          path: ./apps/blog/dist
 
   deploy:
     needs: build
