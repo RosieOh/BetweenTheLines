@@ -1,5 +1,5 @@
 import { useTheme } from "next-themes";
-import { Toaster as Sonner, toast } from "sonner";
+import { Toaster as Sonner } from "sonner";
 
 type ToasterProps = React.ComponentProps<typeof Sonner>;
 
@@ -24,4 +24,6 @@ const Toaster = ({ ...props }: ToasterProps) => {
   );
 };
 
-export { Toaster, toast };
+// toast 함수가 필요하면 "sonner" 에서 직접 import 하세요.
+// (여기서 재수출하면 이 파일이 컴포넌트 전용이 아니게 되어 fast refresh 가 깨집니다)
+export { Toaster };
