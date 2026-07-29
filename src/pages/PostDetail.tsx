@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { useTheme } from "next-themes";
 import { ArrowLeft, Clock, Calendar, Twitter, Linkedin, Link2, Check, Copy, Heart, ChevronDown } from "lucide-react";
@@ -14,27 +13,77 @@ import ScrollToTop from "@/components/blog/ScrollToTop";
 import GiscusComments from "@/components/blog/GiscusComments";
 import NotFoundInline from "@/components/blog/NotFoundInline";
 import { getAllPosts } from "@/lib/postStorage";
+import { loadPostContent } from "@/lib/loadPosts";
 import { categoryStyles } from "@/lib/categoryConfig";
 import { sanitizeHref } from "@/lib/utils";
 import { useLike } from "@/lib/useLike";
+import { SyntaxHighlighter, resolveLanguage } from "@/lib/syntaxHighlighter";
+import { blogConfig } from "@/lib/blogConfig";
+
+interface Heading {
+  level: number;
+  text: string;
+  id: string;
+}
 
 function slugify(text: string) {
   return String(text)
     .toLowerCase()
     .replace(/\s+/g, "-")
-    .replace(/[^\w\uAC00-\uD7A3-]/g, "")
+    .replace(/[^\w가-힣-]/g, "")
     .replace(/^-+|-+$/g, "");
 }
 
-function extractHeadings(markdown: string) {
-  return markdown.split("\n").reduce<{ level: number; text: string; id: string }[]>((acc, line) => {
-    const h2 = line.match(/^## (.+)/);
-    const h3 = line.match(/^### (.+)/);
-    if (h2) acc.push({ level: 2, text: h2[1], id: slugify(h2[1]) });
-    if (h3) acc.push({ level: 3, text: h3[1], id: slugify(h3[1]) });
+function extractHeadings(markdown: string): Heading[] {
+  let inFence = false;
+
+  return markdown.split("\n").reduce<Heading[]>((acc, line) => {
+    // 코드 블록 안의 `## 주석`을 목차로 오인하지 않도록 펜스를 추적합니다.
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      return acc;
+    }
+    if (inFence) return acc;
+
+    const heading = /^(#{2,3}) (.+)/.exec(line);
+    if (heading) {
+      const text = heading[2].trim();
+      acc.push({ level: heading[1].length, text, id: slugify(text) });
+    }
     return acc;
   }, []);
 }
+
+// Table of contents links — shared by desktop sidebar and mobile drawer
+const TocLinks = ({
+  headings,
+  activeId,
+  onNavigate,
+}: {
+  headings: Heading[];
+  activeId: string;
+  onNavigate?: () => void;
+}) => (
+  <nav className="flex flex-col gap-1">
+    {headings.map((h) => (
+      <a
+        key={h.id}
+        href={`#${h.id}`}
+        onClick={onNavigate}
+        aria-current={activeId === h.id ? "location" : undefined}
+        className={`transition-colors leading-snug py-0.5 ${
+          h.level === 3 ? "pl-3 text-[12px] border-l border-border" : "text-[13px] font-medium"
+        } ${
+          activeId === h.id
+            ? "text-foreground font-semibold"
+            : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        {h.text}
+      </a>
+    ))}
+  </nav>
+);
 
 // Sticky sidebar
 const PostDetailSidebar = ({
@@ -42,61 +91,36 @@ const PostDetailSidebar = ({
   activeId,
   onContact,
 }: {
-  headings: { level: number; text: string; id: string }[];
+  headings: Heading[];
   activeId: string;
   onContact: () => void;
-}) => {
-  return (
-    <aside className="sticky top-20 flex flex-col gap-4">
-      {/* Table of contents */}
-      {headings.length > 0 && (
-        <div className="bg-secondary rounded-2xl p-5 border border-border">
-          <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground mb-3">
-            목차
-          </p>
-          <nav className="flex flex-col gap-1">
-            {headings.map((h) => (
-              <a
-                key={h.id}
-                href={`#${h.id}`}
-                className={`transition-colors leading-snug py-0.5 ${
-                  h.level === 3
-                    ? "pl-3 text-[12px] border-l border-border"
-                    : "text-[13px] font-medium"
-                } ${
-                  activeId === h.id
-                    ? "text-foreground font-semibold"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {h.text}
-              </a>
-            ))}
-          </nav>
-        </div>
-      )}
-
-      {/* CTA */}
-      <div className="bg-primary rounded-2xl p-5 text-primary-foreground">
-        <p className="text-[10px] font-bold opacity-50 mb-1.5 uppercase tracking-widest">
-          Between the Lines
+}) => (
+  <aside className="sticky top-20 flex flex-col gap-4">
+    {headings.length > 0 && (
+      <div className="bg-secondary rounded-2xl p-5 border border-border">
+        <p className="text-[10px] font-bold tracking-widest uppercase text-muted-foreground mb-3">
+          목차
         </p>
-        <p className="text-[16px] font-extrabold leading-snug mb-1">
-          피드백이나 문의는
-        </p>
-        <p className="text-[16px] font-extrabold leading-snug mb-4 opacity-70">
-          언제든 환영해요
-        </p>
-        <button
-          onClick={onContact}
-          className="flex w-full justify-center px-4 py-2.5 rounded-xl bg-primary-foreground text-primary text-[13px] font-bold hover:opacity-90 transition-opacity"
-        >
-          메시지 보내기
-        </button>
+        <TocLinks headings={headings} activeId={activeId} />
       </div>
-    </aside>
-  );
-};
+    )}
+
+    {/* CTA */}
+    <div className="bg-primary rounded-2xl p-5 text-primary-foreground">
+      <p className="text-[10px] font-bold opacity-50 mb-1.5 uppercase tracking-widest">
+        {blogConfig.name}
+      </p>
+      <p className="text-[16px] font-extrabold leading-snug mb-1">피드백이나 문의는</p>
+      <p className="text-[16px] font-extrabold leading-snug mb-4 opacity-70">언제든 환영해요</p>
+      <button
+        onClick={onContact}
+        className="flex w-full justify-center px-4 py-2.5 rounded-xl bg-primary-foreground text-primary text-[13px] font-bold hover:opacity-90 transition-opacity"
+      >
+        메시지 보내기
+      </button>
+    </div>
+  </aside>
+);
 
 // Code block with copy button
 const CodeBlock = ({
@@ -109,23 +133,32 @@ const CodeBlock = ({
   codeStyle: Record<string, React.CSSProperties>;
 }) => {
   const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard
+      ?.writeText(code)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {
+        /* 클립보드 권한이 없으면 조용히 무시합니다 */
+      });
+  };
+
   return (
     <div className="relative group my-6">
       <button
-        onClick={() => {
-          navigator.clipboard.writeText(code).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-          });
-        }}
-        className="absolute top-2.5 right-2.5 z-10 flex items-center gap-1 px-2 py-1 rounded-md bg-white/10 text-[11px] text-white/60 hover:bg-white/20 hover:text-white transition-all opacity-0 group-hover:opacity-100"
+        onClick={handleCopy}
+        aria-label="코드 복사"
+        className="absolute top-2.5 right-2.5 z-10 flex items-center gap-1 px-2 py-1 rounded-md bg-white/10 text-[11px] text-white/60 hover:bg-white/20 hover:text-white transition-all opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
       >
         {copied ? <Check size={11} /> : <Copy size={11} />}
         {copied ? "복사됨" : "복사"}
       </button>
       <SyntaxHighlighter
         style={codeStyle}
-        language={language}
+        language={resolveLanguage(language)}
         PreTag="div"
         customStyle={{ borderRadius: "0.75rem", fontSize: "13px", margin: 0, padding: "1.25rem" }}
       >
@@ -136,78 +169,67 @@ const CodeBlock = ({
 };
 
 // Mobile collapsible TOC
-const MobileToc = ({
-  headings,
-  activeId,
-}: {
-  headings: { level: number; text: string; id: string }[];
-  activeId: string;
-}) => {
+const MobileToc = ({ headings, activeId }: { headings: Heading[]; activeId: string }) => {
   const [open, setOpen] = useState(false);
   if (headings.length === 0) return null;
+
   return (
     <div className="lg:hidden mb-6 rounded-xl border border-border bg-secondary overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
         className="w-full flex items-center justify-between px-4 py-3 text-[13px] font-semibold text-foreground"
       >
         목차
         <ChevronDown size={14} className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <nav className="px-4 pb-4 flex flex-col gap-1 border-t border-border pt-3">
-          {headings.map((h) => (
-            <a
-              key={h.id}
-              href={`#${h.id}`}
-              onClick={() => setOpen(false)}
-              className={`transition-colors leading-snug py-0.5 ${
-                h.level === 3 ? "pl-3 text-[12px] border-l border-border" : "text-[13px] font-medium"
-              } ${activeId === h.id ? "text-foreground font-semibold" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              {h.text}
-            </a>
-          ))}
-        </nav>
+        <div className="px-4 pb-4 border-t border-border pt-3">
+          <TocLinks headings={headings} activeId={activeId} onNavigate={() => setOpen(false)} />
+        </div>
       )}
     </div>
   );
 };
 
 // Markdown component factory — recreated when isDark changes for code theme sync
-function makeMarkdownComponents(isDark: boolean) {
+function makeMarkdownComponents(isDark: boolean): Components {
   const codeStyle = isDark ? oneDark : oneLight;
+
   return {
-    h2({ children }: { children?: React.ReactNode }) {
-      const id = slugify(String(children));
+    h2({ children }) {
       return (
-        <h2 id={id} className="scroll-mt-24 text-2xl font-bold text-foreground mt-10 mb-4">
+        <h2 id={slugify(String(children))} className="scroll-mt-24 text-2xl font-bold text-foreground mt-10 mb-4">
           {children}
         </h2>
       );
     },
-    h3({ children }: { children?: React.ReactNode }) {
-      const id = slugify(String(children));
+    h3({ children }) {
       return (
-        <h3 id={id} className="scroll-mt-24 text-xl font-semibold text-foreground mt-8 mb-3">
+        <h3 id={slugify(String(children))} className="scroll-mt-24 text-xl font-semibold text-foreground mt-8 mb-3">
           {children}
         </h3>
       );
     },
-    p({ children }: { children?: React.ReactNode }) {
+    p({ children }) {
       return <p className="text-foreground/75 leading-[1.9] mb-5 text-[16px]">{children}</p>;
     },
-    strong({ children }: { children?: React.ReactNode }) {
+    strong({ children }) {
       return <strong className="text-foreground font-semibold">{children}</strong>;
     },
-    a({ href, children }: { href?: string; children?: React.ReactNode }) {
+    a({ href, children }) {
       return (
-        <a href={sanitizeHref(href)} className="text-accent underline underline-offset-2 hover:opacity-80 transition-opacity" rel="noopener noreferrer">
+        <a
+          href={sanitizeHref(href)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-accent underline underline-offset-2 hover:opacity-80 transition-opacity"
+        >
           {children}
         </a>
       );
     },
-    code({ className, children }: { className?: string; children?: React.ReactNode }) {
+    code({ className, children }) {
       const match = /language-(\w+)/.exec(className || "");
       if (match) {
         return (
@@ -224,9 +246,9 @@ function makeMarkdownComponents(isDark: boolean) {
         </code>
       );
     },
-    pre({ children }: { children?: React.ReactNode }) {
-      // CodeBlock already renders its own wrapper — just passthrough
-      const child = children as React.ReactElement;
+    pre({ children }) {
+      // CodeBlock이 자체 래퍼를 렌더하므로 언어가 지정된 블록은 그대로 통과시킵니다.
+      const child = children as React.ReactElement<{ className?: string }>;
       if (child?.props?.className?.includes("language-")) return <>{children}</>;
       return (
         <pre className="bg-secondary border border-border rounded-xl p-5 overflow-x-auto my-6 text-[14px] leading-relaxed">
@@ -234,40 +256,38 @@ function makeMarkdownComponents(isDark: boolean) {
         </pre>
       );
     },
-    blockquote({ children }: { children?: React.ReactNode }) {
+    blockquote({ children }) {
       return (
         <blockquote className="border-l-4 border-accent pl-5 my-6 text-muted-foreground italic">
           {children}
         </blockquote>
       );
     },
-    ul({ children }: { children?: React.ReactNode }) {
+    ul({ children }) {
       return <ul className="list-disc list-outside pl-6 mb-5 flex flex-col gap-1.5">{children}</ul>;
     },
-    ol({ children }: { children?: React.ReactNode }) {
+    ol({ children }) {
       return <ol className="list-decimal list-outside pl-6 mb-5 flex flex-col gap-1.5">{children}</ol>;
     },
-    li({ children }: { children?: React.ReactNode }) {
+    li({ children }) {
       return <li className="text-foreground/75 text-[16px] leading-relaxed">{children}</li>;
     },
-    table({ children }: { children?: React.ReactNode }) {
+    table({ children }) {
       return (
         <div className="overflow-x-auto my-6">
           <table className="w-full border-collapse text-[14px]">{children}</table>
         </div>
       );
     },
-    th({ children }: { children?: React.ReactNode }) {
+    th({ children }) {
       return (
         <th className="text-left px-4 py-2.5 bg-secondary border border-border font-semibold text-foreground text-[13px]">
           {children}
         </th>
       );
     },
-    td({ children }: { children?: React.ReactNode }) {
-      return (
-        <td className="px-4 py-2.5 border border-border text-muted-foreground">{children}</td>
-      );
+    td({ children }) {
+      return <td className="px-4 py-2.5 border border-border text-muted-foreground">{children}</td>;
     },
     hr() {
       return <hr className="border-border my-8" />;
@@ -281,10 +301,15 @@ const ShareButtons = ({ title }: { title: string }) => {
   const url = typeof window !== "undefined" ? window.location.href : "";
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+    navigator.clipboard
+      ?.writeText(url)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {
+        /* 클립보드 권한이 없으면 조용히 무시합니다 */
+      });
   };
 
   return (
@@ -319,28 +344,76 @@ const ShareButtons = ({ title }: { title: string }) => {
   );
 };
 
+const ArticleSkeleton = () => (
+  <div className="animate-pulse flex flex-col gap-3" aria-hidden="true">
+    {[...Array(8)].map((_, i) => (
+      <div key={i} className={`h-4 rounded bg-secondary ${i % 4 === 3 ? "w-2/3" : "w-full"}`} />
+    ))}
+  </div>
+);
+
+type ContentState = "loading" | "ready" | "error";
+
 const PostDetail = () => {
   const { id } = useParams<{ id: string }>();
-  const allPosts = getAllPosts();
-  const post = allPosts.find((p) => p.id === id);
   const [contactOpen, setContactOpen] = useState(false);
   const [activeId, setActiveId] = useState("");
+  const [content, setContent] = useState("");
+  const [contentState, setContentState] = useState<ContentState>("loading");
   const { resolvedTheme } = useTheme();
   const { liked, toggle: toggleLike } = useLike(id ?? "");
-  const isDark = resolvedTheme === "dark";
 
+  const isDark = resolvedTheme === "dark";
+  const allPosts = useMemo(() => getAllPosts(), []);
+  const post = useMemo(() => allPosts.find((p) => p.id === id), [allPosts, id]);
   const markdownComponents = useMemo(() => makeMarkdownComponents(isDark), [isDark]);
+  const headings = useMemo(() => extractHeadings(content), [content]);
+
+  // 본문은 글 단위 청크로 분리돼 있어 상세 진입 시점에만 로드합니다.
+  useEffect(() => {
+    if (!post) return;
+
+    // 관리자 화면에서 저장한 글은 본문을 이미 들고 있습니다.
+    if (post.content !== undefined) {
+      setContent(post.content);
+      setContentState("ready");
+      return;
+    }
+
+    let cancelled = false;
+    setContentState("loading");
+
+    loadPostContent(post.id)
+      .then((loaded) => {
+        if (cancelled) return;
+        if (loaded === null) {
+          setContentState("error");
+          return;
+        }
+        setContent(loaded);
+        setContentState("ready");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error(`[PostDetail] 본문 로드 실패: ${post.id}`, err);
+        setContentState("error");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [post]);
 
   // SEO: document title + Open Graph meta tags
   useEffect(() => {
-    const prevTitle = document.title;
     if (!post) return;
 
-    document.title = `${post.title} | Between the Lines`;
+    const prevTitle = document.title;
+    document.title = `${post.title} | ${blogConfig.name}`;
 
     const setMeta = (key: string, value: string, isProperty = false) => {
       const attr = isProperty ? "property" : "name";
-      let el = document.querySelector(`meta[${attr}="${key}"]`) as HTMLMetaElement | null;
+      let el = document.querySelector<HTMLMetaElement>(`meta[${attr}="${key}"]`);
       if (!el) {
         el = document.createElement("meta");
         el.setAttribute(attr, key);
@@ -348,66 +421,70 @@ const PostDetail = () => {
       }
       const prev = el.getAttribute("content") ?? "";
       el.setAttribute("content", value);
-      return () => { el!.setAttribute("content", prev); };
+      return () => el?.setAttribute("content", prev);
     };
 
+    const absoluteThumb = new URL(post.thumbnail, window.location.origin).href;
     const restores = [
       setMeta("description", post.excerpt),
       setMeta("og:title", post.title, true),
       setMeta("og:description", post.excerpt, true),
-      setMeta("og:image", post.thumbnail, true),
+      setMeta("og:image", absoluteThumb, true),
       setMeta("og:type", "article", true),
       setMeta("og:url", window.location.href, true),
       setMeta("twitter:card", "summary_large_image"),
       setMeta("twitter:title", post.title),
       setMeta("twitter:description", post.excerpt),
-      setMeta("twitter:image", post.thumbnail),
+      setMeta("twitter:image", absoluteThumb),
     ];
 
     return () => {
       document.title = prevTitle;
-      restores.forEach((r) => r());
+      restores.forEach((restore) => restore());
     };
   }, [post]);
+
+  // IntersectionObserver for active TOC heading
+  useEffect(() => {
+    if (headings.length === 0) return;
+
+    const ids = headings.map((h) => h.id);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = new Set(
+          entries.filter((e) => e.isIntersecting).map((e) => e.target.id)
+        );
+        if (visible.size === 0) return;
+        // 문서 순서상 가장 위에 보이는 헤딩을 활성 항목으로 삼습니다.
+        const topmost = ids.find((headingId) => visible.has(headingId));
+        if (topmost) setActiveId(topmost);
+      },
+      { rootMargin: "-80px 0px -60% 0px" }
+    );
+
+    ids.forEach((headingId) => {
+      const el = document.getElementById(headingId);
+      if (el) observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, [headings]);
+
+  // 관련 글: 같은 카테고리이거나 태그가 겹치는 글 (allPosts는 이미 최신순)
+  const relatedPosts = useMemo(() => {
+    if (!post) return [];
+    return allPosts
+      .filter(
+        (p) =>
+          p.id !== post.id &&
+          (p.category === post.category || p.tags.some((t) => post.tags.includes(t)))
+      )
+      .slice(0, 3);
+  }, [allPosts, post]);
 
   if (!post) {
     return <NotFoundInline message="포스트를 찾을 수 없습니다." />;
   }
-
-  const headings = extractHeadings(post.content);
-
-  // IntersectionObserver for active TOC heading
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  useEffect(() => {
-    if (headings.length === 0) return;
-    observerRef.current?.disconnect();
-    const ids = headings.map((h) => h.id);
-    observerRef.current = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.filter((e) => e.isIntersecting).map((e) => e.target.id);
-        if (visible.length > 0) {
-          // Pick the topmost visible heading
-          const first = ids.find((id) => visible.includes(id));
-          if (first) setActiveId(first);
-        }
-      },
-      { rootMargin: "-80px 0px -60% 0px" }
-    );
-    ids.forEach((hId) => {
-      const el = document.getElementById(hId);
-      if (el) observerRef.current!.observe(el);
-    });
-    return () => observerRef.current?.disconnect();
-  }, [post.id]); // re-run when post changes
-
-  // Related posts: same category or shared tag, excluding current
-  const relatedPosts = allPosts
-    .filter(
-      (p) =>
-        p.id !== post.id &&
-        (p.category === post.category || p.tags.some((t) => post.tags.includes(t)))
-    )
-    .slice(0, 3);
 
   return (
     <div className="min-h-screen bg-background">
@@ -455,7 +532,7 @@ const PostDetail = () => {
             </Link>
             <div className="flex items-center gap-1.5">
               <Calendar size={13} />
-              {post.date}
+              <time dateTime={post.rawDate}>{post.date}</time>
             </div>
             <div className="flex items-center gap-1.5">
               <Clock size={13} />
@@ -469,7 +546,9 @@ const PostDetail = () => {
           <div className="w-full rounded-2xl overflow-hidden aspect-[16/7]">
             <img
               src={post.thumbnail}
-              alt={post.title}
+              alt=""
+              width={1200}
+              height={525}
               className="w-full h-full object-cover"
             />
           </div>
@@ -486,12 +565,24 @@ const PostDetail = () => {
 
               {/* Markdown body */}
               <div className="text-base">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={markdownComponents as any}
-                >
-                  {post.content}
-                </ReactMarkdown>
+                {contentState === "loading" && <ArticleSkeleton />}
+
+                {contentState === "error" && (
+                  <div className="rounded-xl border border-border bg-secondary p-6 text-center">
+                    <p className="text-[14px] font-semibold text-foreground mb-1">
+                      본문을 불러오지 못했습니다
+                    </p>
+                    <p className="text-[13px] text-muted-foreground">
+                      네트워크 상태를 확인하고 페이지를 새로고침해 주세요.
+                    </p>
+                  </div>
+                )}
+
+                {contentState === "ready" && (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                    {content}
+                  </ReactMarkdown>
+                )}
               </div>
 
               {/* Social share + Like */}
@@ -499,6 +590,7 @@ const PostDetail = () => {
                 <ShareButtons title={post.title} />
                 <button
                   onClick={toggleLike}
+                  aria-pressed={liked}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[12px] font-medium transition-colors ${
                     liked
                       ? "border-red-300 bg-red-50 text-red-500 dark:bg-red-950/30 dark:border-red-800"
@@ -532,9 +624,11 @@ const PostDetail = () => {
                   {post.author.charAt(0)}
                 </div>
                 <div>
-                  <p className="font-bold text-foreground mb-1 group-hover:text-accent transition-colors">{post.author}</p>
+                  <p className="font-bold text-foreground mb-1 group-hover:text-accent transition-colors">
+                    {post.author}
+                  </p>
                   <p className="text-[13px] text-muted-foreground leading-relaxed">
-                    얻은 지식을 프로젝트에 적용하고, 기록하는 습관으로 성장하는 개발자입니다.
+                    {blogConfig.author.bio}
                   </p>
                 </div>
               </Link>
@@ -553,7 +647,7 @@ const PostDetail = () => {
                         className="flex items-center gap-4 p-4 rounded-2xl border border-border bg-background hover:bg-secondary/40 transition-colors group"
                       >
                         <div className="w-16 h-12 rounded-lg overflow-hidden flex-shrink-0">
-                          <img src={rel.thumbnail} alt={rel.title} className="w-full h-full object-cover" />
+                          <img src={rel.thumbnail} alt="" loading="lazy" className="w-full h-full object-cover" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <span
@@ -566,7 +660,9 @@ const PostDetail = () => {
                           <p className="text-[13px] font-semibold text-foreground group-hover:text-accent transition-colors line-clamp-1">
                             {rel.title}
                           </p>
-                          <p className="text-[11px] text-muted-foreground mt-0.5">{rel.date} · {rel.readTime}</p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            {rel.date} · {rel.readTime}
+                          </p>
                         </div>
                       </Link>
                     ))}
@@ -580,7 +676,11 @@ const PostDetail = () => {
 
             {/* ── Sidebar ── */}
             <div className="hidden lg:block">
-              <PostDetailSidebar headings={headings} activeId={activeId} onContact={() => setContactOpen(true)} />
+              <PostDetailSidebar
+                headings={headings}
+                activeId={activeId}
+                onContact={() => setContactOpen(true)}
+              />
             </div>
           </div>
         </div>
