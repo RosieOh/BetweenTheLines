@@ -1,18 +1,18 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { motion } from "framer-motion";
-import type { PostData } from "@/data/posts";
+import { m } from "framer-motion";
+import type { PostMeta } from "@/data/posts";
 import { categoryStyles } from "@/lib/categoryConfig";
 
 interface BlogArticleCardProps {
-  post: PostData;
+  post: PostMeta;
 }
 
 const BlogArticleCard = ({ post }: BlogArticleCardProps) => {
   const [imgLoaded, setImgLoaded] = useState(false);
 
   return (
-    <motion.div
+    <m.div
       initial={{ opacity: 0, y: 16 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-40px" }}
@@ -64,7 +64,7 @@ const BlogArticleCard = ({ post }: BlogArticleCardProps) => {
           </div>
         </article>
       </Link>
-    </motion.div>
+    </m.div>
   );
 };
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Search, Menu, X } from "lucide-react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import ThemeToggle from "@/components/blog/ThemeToggle";
 
 const navItems = [
@@ -63,7 +63,7 @@ const BlogHeader = () => {
           {/* Desktop inline search bar */}
           <AnimatePresence>
             {searchOpen && (
-              <motion.form
+              <m.form
                 key="search-bar"
                 initial={{ width: 0, opacity: 0 }}
                 animate={{ width: 200, opacity: 1 }}
@@ -82,7 +82,7 @@ const BlogHeader = () => {
                   aria-label="검색어 입력"
                   className="w-full h-8 px-3 rounded-lg border border-border bg-background text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-accent/40"
                 />
-              </motion.form>
+              </m.form>
             )}
           </AnimatePresence>
 
@@ -124,7 +124,7 @@ const BlogHeader = () => {
       {/* Mobile menu */}
       <AnimatePresence>
         {mobileOpen && (
-          <motion.nav
+          <m.nav
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
@@ -170,7 +170,7 @@ const BlogHeader = () => {
                 GitHub
               </a>
             </div>
-          </motion.nav>
+          </m.nav>
         )}
       </AnimatePresence>
     </header>

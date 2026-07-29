@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { getAllPosts } from "@/lib/postStorage";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 
 const BlogHero = () => {
   const featuredPosts = getAllPosts().slice(0, 3);
@@ -20,7 +20,7 @@ const BlogHero = () => {
         <div className="grid md:grid-cols-2 gap-8 md:gap-12 items-center">
           {/* Text */}
           <AnimatePresence mode="wait">
-            <motion.div
+            <m.div
               key={post.id}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -46,12 +46,12 @@ const BlogHero = () => {
               >
                 읽기 →
               </Link>
-            </motion.div>
+            </m.div>
           </AnimatePresence>
 
           {/* Image */}
           <AnimatePresence mode="wait">
-            <motion.div
+            <m.div
               key={post.id + "-img"}
               initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -65,7 +65,7 @@ const BlogHero = () => {
                 className="w-full h-full object-cover"
                 loading="lazy"
               />
-            </motion.div>
+            </m.div>
           </AnimatePresence>
         </div>
 

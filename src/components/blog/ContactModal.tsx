@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { X, Send, CheckCircle } from "lucide-react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import { validateEmail } from "@/lib/utils";
 import { saveInquiry } from "@/lib/postStorage";
 
@@ -27,7 +27,10 @@ const ContactModal = ({ open, onClose }: ContactModalProps) => {
     e.preventDefault();
     const errs = validate();
     if (Object.keys(errs).length > 0) { setErrors(errs); return; }
-    saveInquiry(form);
+    if (!saveInquiry(form)) {
+      setErrors({ message: "문의를 저장하지 못했습니다. 잠시 후 다시 시도해주세요." });
+      return;
+    }
     setSubmitted(true);
   };
 
@@ -69,7 +72,7 @@ const ContactModal = ({ open, onClose }: ContactModalProps) => {
       {open && (
         <>
           {/* Backdrop */}
-          <motion.div
+          <m.div
             key="backdrop"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -80,7 +83,7 @@ const ContactModal = ({ open, onClose }: ContactModalProps) => {
           />
 
           {/* Modal */}
-          <motion.div
+          <m.div
             key="modal"
             initial={{ opacity: 0, scale: 0.95, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -187,7 +190,7 @@ const ContactModal = ({ open, onClose }: ContactModalProps) => {
                 )}
               </div>
             </div>
-          </motion.div>
+          </m.div>
         </>
       )}
     </AnimatePresence>
