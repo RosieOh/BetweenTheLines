@@ -12,5 +12,6 @@ Allow: /
 
 User-agent: *
 Allow: /
+Disallow: /BetweenTheLines/admin
 
-Sitemap: https://between-the-lines.blog/sitemap.xml
+Sitemap: https://rosieoh.github.io/BetweenTheLines/sitemap.xml
