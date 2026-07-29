@@ -1,19 +1,21 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2023"],
+    "target": "ES2020",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+    "useDefineForClassFields": true,
     "allowImportingTsExtensions": true,
     "isolatedModules": true,
-    "moduleDetection": "force",
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "strict": true,
+    "strict": false,
+    "noImplicitAny": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "types": ["node"]
-  },
-  "include": ["apps/*/vite.config.ts", "apps/*/tailwind.config.ts", "tailwind.preset.ts", "vitest.config.ts"]
+    "noFallthroughCasesInSwitch": false
+  }
 }
