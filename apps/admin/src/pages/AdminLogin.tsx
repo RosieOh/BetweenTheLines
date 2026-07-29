@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Lock, Eye, EyeOff } from "lucide-react";
-import { login } from "@/lib/postStorage";
+import { login } from "@btl/core";
+import { blogLink } from "@/lib/blogUrl";
 
 const AdminLogin = () => {
   const navigate = useNavigate();
@@ -13,7 +14,7 @@ const AdminLogin = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (login(password)) {
-      navigate("/admin/dashboard");
+      navigate("/dashboard");
     } else {
       setError("비밀번호가 올바르지 않습니다.");
       setShaking(true);
@@ -83,9 +84,12 @@ const AdminLogin = () => {
         </form>
 
         <p className="text-center text-[12px] text-muted-foreground mt-5">
-          <Link to="/" className="hover:text-foreground transition-colors">
+          <a
+            href={blogLink("/")}
+            className="hover:text-foreground transition-colors"
+          >
             ← 블로그로 돌아가기
-          </Link>
+          </a>
         </p>
       </div>
     </div>

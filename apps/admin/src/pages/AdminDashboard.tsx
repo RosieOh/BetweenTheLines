@@ -12,17 +12,8 @@ import {
   Users,
   Search,
 } from "lucide-react";
-import {
-  getAllPosts,
-  getStoredPosts,
-  deletePost,
-  getInquiries,
-  getSubscribers,
-} from "@/lib/postStorage";
-import { samplePosts } from "@/data/posts";
-import { categoryStyles } from "@/lib/categoryConfig";
-import { categoryList } from "@/lib/blogConfig";
-import AdminLayout from "@/components/blog/AdminLayout";
+import AdminLayout from "@/components/AdminLayout";
+import { blogLink } from "@/lib/blogUrl";
 import {
   BarChart,
   Bar,
@@ -32,6 +23,7 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
+import { getAllPosts, getStoredPosts, deletePost, getInquiries, getSubscribers, samplePosts, categoryStyles, categoryList } from "@btl/core";
 
 const AdminDashboard = () => {
   const [posts, setPosts] = useState(getAllPosts());
@@ -86,7 +78,7 @@ const AdminDashboard = () => {
             <p className="text-[13px] text-muted-foreground mt-0.5">블로그 현황을 한눈에 확인하세요.</p>
           </div>
           <Link
-            to="/admin/posts/new"
+            to="/posts/new"
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-[13px] font-semibold hover:opacity-90 transition-opacity"
           >
             <Plus size={14} />
@@ -200,18 +192,19 @@ const AdminDashboard = () => {
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <Link
-                    to={`/post/${post.id}`}
+                  <a
+                    href={blogLink(`/post/${post.id}`)}
                     target="_blank"
+                    rel="noopener noreferrer"
                     className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
                     title="미리보기"
                   >
                     <ExternalLink size={15} />
-                  </Link>
+                  </a>
                   {isCustom && (
                     <>
                       <Link
-                        to={`/admin/posts/${post.id}/edit`}
+                        to={`/posts/${post.id}/edit`}
                         className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
                         title="수정"
                       >
@@ -236,7 +229,7 @@ const AdminDashboard = () => {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-[16px] font-extrabold text-foreground">최근 문의</h2>
           <Link
-            to="/admin/inquiries"
+            to="/inquiries"
             className="text-[12px] text-muted-foreground hover:text-foreground transition-colors"
           >
             전체 보기 →

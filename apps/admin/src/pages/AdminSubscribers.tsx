@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Users, Trash2, Copy, Check } from "lucide-react";
-import { getSubscribers, deleteSubscriber } from "@/lib/postStorage";
-import AdminLayout from "@/components/blog/AdminLayout";
+import AdminLayout from "@/components/AdminLayout";
+import { getSubscribers, deleteSubscriber } from "@btl/core";
 
 const AdminSubscribers = () => {
   const [subscribers, setSubscribers] = useState<string[]>(() => getSubscribers());

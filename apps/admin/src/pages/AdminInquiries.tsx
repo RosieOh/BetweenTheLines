@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { MessageSquare, Trash2, X } from "lucide-react";
-import { getInquiries, deleteInquiry, type Inquiry } from "@/lib/postStorage";
-import AdminLayout from "@/components/blog/AdminLayout";
+import AdminLayout from "@/components/AdminLayout";
+import { getInquiries, deleteInquiry, type Inquiry } from "@btl/core";
 
 const AdminInquiries = () => {
   const [inquiries, setInquiries] = useState<Inquiry[]>(() =>

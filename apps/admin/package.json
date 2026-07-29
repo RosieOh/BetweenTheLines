@@ -1,0 +1,27 @@
+{
+  "name": "@btl/admin",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "관리자 앱. 로컬 저작 도구이며 GitHub Pages 로는 배포하지 않습니다.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node -e \"require('fs').copyFileSync('dist/index.html','dist/404.html')\"",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@btl/core": "*",
+    "lucide-react": "^0.462.0",
+    "next-themes": "^0.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^6.30.1",
+    "recharts": "^2.15.4",
+    "remark-gfm": "^4.0.1",
+    "tailwindcss-animate": "^1.0.7"
+  },
+  "devDependencies": {
+    "@btl/build": "*"
+  }
+}

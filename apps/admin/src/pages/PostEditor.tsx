@@ -3,23 +3,15 @@ import { useNavigate, useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Eye, EyeOff, Save, Download, FileText, RefreshCw } from "lucide-react";
-import {
-  isAuthenticated,
-  getAllPosts,
-  savePost,
-  generateId,
-} from "@/lib/postStorage";
-import AdminLayout from "@/components/blog/AdminLayout";
-import type { PostData } from "@/data/posts";
-import { categoryList } from "@/lib/blogConfig";
-import { toIsoDate, formatDisplayDate } from "@/lib/utils";
-import { loadPostContent } from "@/lib/loadPosts";
+import AdminLayout from "@/components/AdminLayout";
 
-import thumbArchitecture from "@/assets/thumb-architecture.jpg";
-import thumbAiReview from "@/assets/thumb-ai-review.jpg";
-import thumbCommunication from "@/assets/thumb-communication.jpg";
-import thumbSecurity from "@/assets/thumb-security.jpg";
-import thumbCicd from "@/assets/thumb-cicd.jpg";
+import thumbArchitecture from "@btl/core/assets/thumb-architecture.jpg";
+import thumbAiReview from "@btl/core/assets/thumb-ai-review.jpg";
+import thumbCommunication from "@btl/core/assets/thumb-communication.jpg";
+import thumbSecurity from "@btl/core/assets/thumb-security.jpg";
+import thumbCicd from "@btl/core/assets/thumb-cicd.jpg";
+import type { PostData } from "@btl/core";
+import { isAuthenticated, getAllPosts, savePost, generateId, categoryList, toIsoDate, formatDisplayDate, loadPostContent } from "@btl/core";
 
 const THUMBNAIL_OPTIONS = [
   { label: "Architecture", src: thumbArchitecture },
@@ -71,7 +63,7 @@ const PostEditor = () => {
       const post: PostData = { id: isEdit && id ? id : generateId(), ...form, thumbnail: thumb };
       savePost(post);
       setSaved(true);
-      setTimeout(() => { navigate("/admin/dashboard"); }, 800);
+      setTimeout(() => { navigate("/dashboard"); }, 800);
     };
   });
 
@@ -94,12 +86,12 @@ const PostEditor = () => {
   };
 
   useEffect(() => {
-    if (!isAuthenticated()) { navigate("/admin"); return; }
+    if (!isAuthenticated()) { navigate("/"); return; }
     if (!isEdit || !id) return;
 
     const post = getAllPosts().find((p) => p.id === id);
     if (!post) {
-      navigate("/admin/dashboard");
+      navigate("/dashboard");
       return;
     }
 

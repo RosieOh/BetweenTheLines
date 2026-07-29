@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { isAuthenticated } from "@/lib/postStorage";
 import AdminSidebar from "./AdminSidebar";
+import { isAuthenticated } from "@btl/core";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -11,7 +11,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!isAuthenticated()) navigate("/admin");
+    if (!isAuthenticated()) navigate("/");
   }, [navigate]);
 
   return (

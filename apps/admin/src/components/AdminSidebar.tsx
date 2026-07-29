@@ -7,13 +7,14 @@ import {
   ExternalLink,
   LogOut,
 } from "lucide-react";
-import { logout } from "@/lib/postStorage";
+import { logout } from "@btl/core";
+import { blogLink } from "@/lib/blogUrl";
 
 const navItems = [
-  { label: "대시보드", to: "/admin/dashboard", icon: LayoutDashboard },
-  { label: "새 게시글", to: "/admin/posts/new", icon: Plus },
-  { label: "문의 관리", to: "/admin/inquiries", icon: MessageSquare },
-  { label: "구독자 관리", to: "/admin/subscribers", icon: Users },
+  { label: "대시보드", to: "/dashboard", icon: LayoutDashboard },
+  { label: "새 게시글", to: "/posts/new", icon: Plus },
+  { label: "문의 관리", to: "/inquiries", icon: MessageSquare },
+  { label: "구독자 관리", to: "/subscribers", icon: Users },
 ];
 
 const AdminSidebar = () => {
@@ -21,13 +22,13 @@ const AdminSidebar = () => {
   const navigate = useNavigate();
 
   const isActive = (to: string) => {
-    if (to === "/admin/dashboard") return location.pathname === "/admin/dashboard";
+    if (to === "/dashboard") return location.pathname === "/dashboard";
     return location.pathname.startsWith(to);
   };
 
   const handleLogout = () => {
     logout();
-    navigate("/admin");
+    navigate("/");
   };
 
   return (
@@ -71,14 +72,15 @@ const AdminSidebar = () => {
 
       {/* Bottom actions */}
       <div className="px-3 py-4 border-t border-border flex flex-col gap-0.5">
-        <Link
-          to="/"
+        <a
+          href={blogLink("/")}
           target="_blank"
+          rel="noopener noreferrer"
           className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
         >
           <ExternalLink size={15} />
           블로그 보기
-        </Link>
+        </a>
         <button
           onClick={handleLogout}
           className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors w-full text-left"
