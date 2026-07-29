@@ -1,14 +1,12 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useMemo } from "react";
 import { ChevronLeft, ChevronRight, ArrowUpDown, FileText } from "lucide-react";
 import { Link } from "react-router-dom";
-import { categories } from "@/data/posts";
+import { categories, byNewest, byOldest } from "@/data/posts";
 import { getPublishedPosts } from "@/lib/postStorage";
 import BlogArticleCard from "./BlogArticleCard";
-import BlogArticleCardSkeleton from "./BlogArticleCardSkeleton";
 import BlogSidebar from "./BlogSidebar";
 
 const PAGE_SIZE = 6;
-const SKELETON_COUNT = 4;
 const FEATURED_SERIES_KEY = "storyg-realworld-series";
 
 type SortOrder = "newest" | "oldest";
@@ -17,30 +15,28 @@ const BlogArticleList = () => {
   const [activeCategory, setActiveCategory] = useState<string>("전체");
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState<SortOrder>("newest");
-  const [loading, setLoading] = useState(true);
-  const isFirstMount = useRef(true);
 
-  useEffect(() => {
-    if (!isFirstMount.current) return;
-    isFirstMount.current = false;
-    const t = setTimeout(() => setLoading(false), 500);
-    return () => clearTimeout(t);
-  }, []);
+  // 포스트 메타데이터는 빌드 타임에 번들되므로 목록에는 로딩 상태가 없습니다.
+  const allPosts = useMemo(() => getPublishedPosts(), []);
 
-  const allPosts = getPublishedPosts();
-  const storygSeriesPosts = allPosts
-    .filter((post) => post.series === FEATURED_SERIES_KEY)
-    .sort((a, b) => (a.seriesOrder ?? Number.MAX_SAFE_INTEGER) - (b.seriesOrder ?? Number.MAX_SAFE_INTEGER));
+  const storygSeriesPosts = useMemo(
+    () =>
+      allPosts
+        .filter((post) => post.series === FEATURED_SERIES_KEY)
+        .sort(
+          (a, b) =>
+            (a.seriesOrder ?? Number.MAX_SAFE_INTEGER) - (b.seriesOrder ?? Number.MAX_SAFE_INTEGER)
+        ),
+    [allPosts]
+  );
 
-  const filtered =
-    activeCategory === "전체"
-      ? allPosts
-      : allPosts.filter((p) => p.category === activeCategory);
-
-  const sorted = [...filtered].sort((a, b) => {
-    if (sort === "oldest") return a.date.localeCompare(b.date);
-    return b.date.localeCompare(a.date);
-  });
+  const sorted = useMemo(() => {
+    const filtered =
+      activeCategory === "전체"
+        ? allPosts
+        : allPosts.filter((p) => p.category === activeCategory);
+    return [...filtered].sort(sort === "oldest" ? byOldest : byNewest);
+  }, [allPosts, activeCategory, sort]);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -124,11 +120,7 @@ const BlogArticleList = () => {
             )}
 
             <div className="flex flex-col gap-0 divide-y divide-border">
-              {loading ? (
-                Array.from({ length: SKELETON_COUNT }).map((_, i) => (
-                  <BlogArticleCardSkeleton key={i} />
-                ))
-              ) : paginated.length > 0 ? (
+              {paginated.length > 0 ? (
                 paginated.map((post) => <BlogArticleCard key={post.id} post={post} />)
               ) : (
                 <div className="flex flex-col items-center py-20 text-center">
@@ -153,7 +145,7 @@ const BlogArticleList = () => {
             </div>
 
             {/* Pagination */}
-            {!loading && totalPages > 1 && (
+            {totalPages > 1 && (
               <div className="flex items-center justify-center gap-1 mt-10">
                 <button
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
