@@ -1,5 +1,5 @@
-import { loadPostsFromFiles } from "@/lib/loadPosts";
-import { allCategoryKeys } from "@/lib/blogConfig";
+import { loadPostsFromFiles } from "./loadPosts";
+import { allCategoryKeys } from "./blogConfig";
 
 /**
  * 목록 화면이 필요로 하는 포스트 메타데이터.

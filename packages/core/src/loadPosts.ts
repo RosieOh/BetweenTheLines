@@ -1,11 +1,11 @@
 import { postsMeta } from "virtual:posts-meta";
-import type { PostMeta } from "@/data/posts";
+import type { PostMeta } from "./posts";
 
-import thumbArchitecture from "@/assets/thumb-architecture.jpg";
-import thumbAiReview from "@/assets/thumb-ai-review.jpg";
-import thumbCommunication from "@/assets/thumb-communication.jpg";
-import thumbSecurity from "@/assets/thumb-security.jpg";
-import thumbCicd from "@/assets/thumb-cicd.jpg";
+import thumbArchitecture from "./assets/thumb-architecture.jpg";
+import thumbAiReview from "./assets/thumb-ai-review.jpg";
+import thumbCommunication from "./assets/thumb-communication.jpg";
+import thumbSecurity from "./assets/thumb-security.jpg";
+import thumbCicd from "./assets/thumb-cicd.jpg";
 
 const thumbnailMap: Record<string, string> = {
   architecture: thumbArchitecture,
@@ -19,7 +19,7 @@ const thumbnailMap: Record<string, string> = {
  * 본문 로더 — eager가 아니므로 각 .mdx가 별도 청크가 되고
  * 실제로 그 글을 열 때만 네트워크를 탑니다.
  */
-const contentLoaders = import.meta.glob("../posts/**/*.mdx", {
+const contentLoaders = import.meta.glob("../../../content/posts/**/*.mdx", {
   query: "?raw",
   import: "default",
 }) as Record<string, () => Promise<string>>;

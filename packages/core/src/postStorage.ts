@@ -1,6 +1,6 @@
-import { samplePosts, byNewest } from "@/data/posts";
-import type { PostData } from "@/data/posts";
-import { toIsoDate } from "@/lib/utils";
+import { samplePosts, byNewest } from "./posts";
+import type { PostData } from "./posts";
+import { toIsoDate } from "./utils";
 
 const POSTS_KEY = "rosie_blog_posts";
 const AUTH_KEY = "rosie_blog_auth";

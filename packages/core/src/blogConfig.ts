@@ -3,7 +3,7 @@
 // 빌드 스크립트(sitemap / prerender)도 같은 파일을 읽으므로 값이 어긋나지 않습니다.
 // 카테고리는 이 파일 아래 categoryList 를 수정하세요.
 
-import blogConfigJson from "../../blog.config.json";
+import blogConfigJson from "../../../blog.config.json";
 
 export const blogConfig = blogConfigJson;
 
