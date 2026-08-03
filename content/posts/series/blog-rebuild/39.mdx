@@ -1,0 +1,238 @@
+---
+title: '[블로그 개선] 관리자 화면을 분리했지만 문제는 남았다: 경계와 구조의 한계'
+date: '2026-08-03'
+author: '오태훈'
+description: '관리자 비밀번호가 공개 배포본에 실려 나가고 있었습니다. npm workspaces로 앱을 분리해 그건 해결했지만, 데이터 흐름을 추적해보니 구조로는 풀리지 않는 문제가 따로 있었습니다.'
+category: 'Frontend'
+tags: ['모노레포', 'npm workspaces', '아키텍처', 'localStorage', '블로그개선']
+readTime: '12분'
+thumbnail: 'security'
+series: 'blog-rebuild-series'
+seriesOrder: 4
+seriesLabel: '블로그 개선 4'
+---
+
+# [블로그 개선] 관리자 화면을 분리했지만 문제는 남았다
+
+이 블로그에는 `/admin` 경로에 관리자 화면이 있습니다. 글을 쓰고, 문의를 확인하고, 구독자를 관리하는 1,300줄짜리 화면입니다.
+
+분리하기로 한 계기는 단순했습니다. 배포 번들에 이게 들어 있었기 때문입니다.
+
+```ts
+// src/lib/postStorage.ts
+const ADMIN_PASSWORD = "rosie2025";
+```
+
+프론트 전용 데모라 주석까지 달려 있었지만, 어쨌든 **공개 사이트를 받은 사람 누구나 볼 수 있는 문자열**이었습니다.
+관리자 전용 의존성(recharts 등 약 400KB)도 함께 나가고 있었습니다.
+
+그런데 분리 작업을 시작하기 전에 데이터 흐름을 한 번 훑어봤고, 거기서 더 큰 걸 발견했습니다.
+
+## 🕰️ 사건 타임라인
+
+- 배포 번들에 관리자 비밀번호·recharts가 포함된 것을 확인
+- 분리 설계 전 데이터 흐름 추적 → **문의·구독이 애초에 동작하지 않는 구조**임을 발견
+- 경계 정리(모노레포)와 데이터 문제(백엔드)가 별개임을 명시하고 전자만 진행
+- npm workspaces로 4개 패키지 분리
+- 분리 과정에서 앱 간 링크 3곳이 깨진 것을 발견하고 수정
+- CI에 관리자 코드 유출 방지 검사 추가
+
+## 🚨 발견: 문의는 애초에 도착하지 않는다
+
+방문자가 "문의하기"를 누르면 이렇게 흘러갑니다.
+
+```
+ContactModal (방문자 브라우저)
+   → saveInquiry(form)
+     → localStorage.setItem("rosie_blog_inquiries", ...)   ← 방문자 브라우저에 저장
+```
+
+관리자는 이렇게 읽습니다.
+
+```
+AdminInquiries (작성자 브라우저)
+   → getInquiries()
+     → localStorage.getItem("rosie_blog_inquiries")        ← 작성자 브라우저에서 읽음
+```
+
+**서로 다른 브라우저입니다.** 백엔드가 없으니 건너갈 방법이 없습니다.
+
+| 기능 | 저장 주체 | 조회 주체 | 결과 |
+| --- | --- | --- | --- |
+| 문의하기 | 방문자 localStorage | 작성자 localStorage | 작성자는 영원히 못 봄 |
+| 뉴스레터 구독 | 방문자 localStorage | 작성자 localStorage | 목록이 항상 비어 있음 |
+| 글 작성/수정 | 작성자 localStorage | 작성자 브라우저에서만 | 방문자에게 발행되지 않음 |
+
+관리자 화면 1,300줄 중 실제로 동작하는 건 **PostEditor의 MDX 내보내기** 하나였습니다.
+`.mdx` 파일을 다운로드해서 저장소에 커밋하면 CI가 배포하는 흐름, 그게 진짜 발행 경로였습니다.
+
+이걸 먼저 인지한 게 중요했습니다. **모노레포로 나눈다고 이 문제가 풀리지 않기 때문입니다.**
+경계를 정리하는 작업과 기능을 동작시키는 작업은 별개고, 그걸 섞으면 "분리했으니 됐다"고 착각하게 됩니다.
+
+## 🛠️ 구조: npm workspaces
+
+경계만 정리하기로 하고 4개 패키지로 나눴습니다.
+
+```
+apps/
+  blog/        @btl/blog    공개 블로그 — GitHub Pages 배포
+  admin/       @btl/admin   관리자 — 로컬 저작 도구, 배포 안 함
+packages/
+  core/        @btl/core    공유 도메인 (포스트·설정·스토리지·유틸)
+  build/       @btl/build   빌드 도구 (frontmatter 파서·sitemap·프리렌더)
+content/
+  posts/                    글 원본
+tailwind.preset.ts          두 앱이 공유하는 디자인 토큰
+```
+
+두 앱은 `@btl/core` 배럴로만 공유 코드를 씁니다. **앱끼리는 서로 import 하지 않습니다.**
+
+```ts
+// apps/admin/src/pages/PostEditor.tsx
+import { isAuthenticated, getAllPosts, savePost, loadPostContent } from "@btl/core";
+```
+
+관리자가 실제로 필요로 한 외부 의존성은 `lucide-react`, `react-markdown`, `remark-gfm` 셋뿐이었습니다.
+생각보다 깔끔하게 갈라졌습니다.
+
+### 글 원본은 어디에 두나
+
+`src/posts`에 있던 34편을 루트 `content/posts`로 옮겼습니다.
+두 앱과 빌드 스크립트가 모두 참조하는데 어느 한 앱 밑에 두면 종속 관계가 이상해지기 때문입니다.
+
+Vite는 프로젝트 루트 밖 파일 접근을 막으므로 허용 설정이 필요했습니다.
+
+```ts
+server: {
+  fs: {
+    // content/ 와 packages/ 가 앱 루트 바깥에 있어 접근을 허용해야 합니다
+    allow: [workspaceRoot],
+  },
+},
+```
+
+### 빌드 스크립트의 cwd 문제
+
+`generate-sitemap.mjs` 같은 스크립트는 `process.cwd()` 기준으로 경로를 잡고 있었습니다.
+이제 `apps/blog`에서 실행되므로 전부 깨집니다.
+
+워크스페이스 루트를 **스크립트 자기 위치에서 역산**하도록 바꿨습니다.
+
+```js
+// packages/build/paths.mjs
+export const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+export const postsDir = join(workspaceRoot, "content", "posts");
+
+/** 스크립트를 호출한 앱의 루트 (npm 스크립트의 cwd) */
+export const appRoot = process.cwd();
+export const distDir = join(appRoot, "dist");
+```
+
+글은 항상 같은 곳에 있고(`workspaceRoot` 기준), 산출물은 호출한 앱에 나갑니다(`cwd` 기준).
+이 둘을 구분하는 게 포인트였습니다.
+
+## 🐛 분리하면서 깨진 것
+
+작업 중 예상 못 한 게 나왔습니다. **앱 간 링크 3곳**입니다.
+
+```tsx
+// 분리 전에는 같은 앱이었으므로 이게 맞았습니다
+<Link to="/">블로그로 돌아가기</Link>
+<Link to="/">블로그 보기</Link>
+<Link to={`/post/${post.id}`}>미리보기</Link>
+```
+
+앱을 나누는 순간 관리자의 `/`는 **관리자 로그인 화면**이 됩니다.
+"블로그로 돌아가기"를 누르면 제자리에 머무는 셈입니다.
+
+라우터 `Link`가 아니라 외부 URL이어야 합니다.
+
+```ts
+// apps/admin/src/lib/blogUrl.ts
+const DEFAULT_BLOG_URL = "http://localhost:8080";
+export const blogUrl = (import.meta.env.VITE_BLOG_URL ?? DEFAULT_BLOG_URL).replace(/\/+$/, "");
+
+export function blogLink(path = "/"): string {
+  return `${blogUrl}${path.startsWith("/") ? path : `/${path}`}`;
+}
+```
+
+```tsx
+<a href={blogLink("/")} target="_blank" rel="noopener noreferrer">블로그 보기</a>
+```
+
+**앱을 나눌 때 `<Link>`를 전수 조사해야 한다**는 걸 이때 배웠습니다.
+타입 검사도 린트도 이건 못 잡습니다. 문법은 완벽히 유효하고 목적지만 틀렸으니까요.
+
+또 하나, 관리자 빌드에 SPA 폴백이 없어서 `/dashboard`로 직접 들어가면 렌더가 안 됐습니다.
+개발 서버는 자동으로 처리해주지만 정적 산출물은 아닙니다.
+
+```json
+"build": "vite build && node -e \"require('fs').copyFileSync('dist/index.html','dist/404.html')\""
+```
+
+## ✅ 검증: 정말 빠졌는가
+
+"분리했다"는 말은 검증 가능해야 합니다. 배포본을 직접 뒤졌습니다.
+
+| 대상 | `rosie2025` | `rosie_blog_auth` | `AdminDashboard` | `recharts` |
+| --- | --- | --- | --- | --- |
+| `apps/blog/dist` | 없음 | 없음 | 없음 | 없음 |
+| `apps/admin/dist` | 있음(정상) | 있음(정상) | 있음 | 있음 |
+
+부수 효과도 있었습니다. **CSS가 10.1 → 7.5 kB(gzip)로 줄었습니다.**
+블로그의 Tailwind 스캔 범위에서 관리자 클래스가 빠졌기 때문입니다. 예상 못 한 이득이었습니다.
+
+## 🧯 회귀 방지
+
+사람이 조심하는 것으로는 부족하니 CI에 검사를 넣었습니다.
+
+```yaml
+- name: 블로그 번들에 관리자 코드 미포함 확인
+  run: |
+    dist=apps/blog/dist
+    for needle in rosie2025 rosie_blog_auth AdminDashboard; do
+      if grep -rqF "$needle" "$dist"; then
+        echo "::error::공개 배포본에 관리자 코드가 포함됐습니다: $needle"
+        exit 1
+      fi
+    done
+```
+
+누군가 실수로 블로그 앱에서 관리자 모듈을 import 하면 빌드가 실패합니다.
+**구조로 나눈 것을 파이프라인으로 굳히는 단계**입니다. 이게 없으면 시간이 지나며 다시 섞입니다.
+
+## 📌 정리
+
+가장 중요한 건 이겁니다.
+
+> **구조를 나눈다고 풀리지 않는 문제가 있다.**
+
+모노레포로 얻은 것은 명확합니다.
+
+- 공개 배포본에서 비밀번호와 관리자 코드가 사라졌습니다
+- 관리자 전용 의존성 400KB가 빠졌습니다
+- CSS가 줄었습니다
+- CI가 재발을 막습니다
+
+얻지 못한 것도 똑같이 명확합니다.
+
+- **문의는 여전히 도착하지 않습니다**
+- **구독자 목록은 여전히 비어 있습니다**
+
+이건 백엔드가 필요한 문제고, 아키텍처를 아무리 예쁘게 나눠도 해결되지 않습니다.
+리팩터링을 하다 보면 "구조가 깔끔해졌으니 좋아졌다"고 느끼기 쉬운데,
+**무엇이 해결됐고 무엇이 그대로인지 분리해서 적어두는 게** 다음 사람에게 훨씬 중요합니다.
+
+그래서 README에 이렇게 남겼습니다.
+
+> **데이터가 브라우저 localStorage 에만 저장됩니다.** 방문자가 남긴 문의·구독은
+> 그 방문자의 브라우저에 저장되므로 관리자 화면에서는 볼 수 없습니다.
+> 이 기능들이 실제로 동작하려면 백엔드가 필요합니다.
+
+### 체크리스트
+
+- 앱을 나눌 때 **`<Link>` 전수 조사** — 문법은 유효한데 목적지만 틀린 버그는 도구가 못 잡습니다
+- 정적 배포되는 SPA는 **404 폴백**이 있어야 직접 URL 진입이 됩니다
+- 빌드 스크립트의 **"글 위치"와 "산출물 위치"** 기준을 분리하세요
+- 분리했다는 주장은 **산출물을 grep 해서** 증명하고, 그 검사를 CI에 넣으세요
