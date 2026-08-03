@@ -3,10 +3,9 @@ import { ChevronLeft, ChevronRight, ArrowUpDown, FileText } from "lucide-react";
 import { Link } from "react-router-dom";
 import BlogArticleCard from "./BlogArticleCard";
 import BlogSidebar from "./BlogSidebar";
-import { categories, byNewest, byOldest, getPublishedPosts } from "@btl/core";
+import { categories, byNewest, byOldest, getPublishedPosts, seriesList } from "@btl/core";
 
 const PAGE_SIZE = 6;
-const FEATURED_SERIES_KEY = "storyg-realworld-series";
 
 type SortOrder = "newest" | "oldest";
 
@@ -18,14 +17,21 @@ const BlogArticleList = () => {
   // 포스트 메타데이터는 빌드 타임에 번들되므로 목록에는 로딩 상태가 없습니다.
   const allPosts = useMemo(() => getPublishedPosts(), []);
 
-  const storygSeriesPosts = useMemo(
+  // blogConfig 의 seriesList 순서대로, 글이 있는 시리즈만 노출합니다.
+  const featuredSeries = useMemo(
     () =>
-      allPosts
-        .filter((post) => post.series === FEATURED_SERIES_KEY)
-        .sort(
-          (a, b) =>
-            (a.seriesOrder ?? Number.MAX_SAFE_INTEGER) - (b.seriesOrder ?? Number.MAX_SAFE_INTEGER)
-        ),
+      seriesList
+        .map((series) => ({
+          ...series,
+          posts: allPosts
+            .filter((post) => post.series === series.key)
+            .sort(
+              (a, b) =>
+                (a.seriesOrder ?? Number.MAX_SAFE_INTEGER) -
+                (b.seriesOrder ?? Number.MAX_SAFE_INTEGER)
+            ),
+        }))
+        .filter((series) => series.posts.length > 0),
     [allPosts]
   );
 
@@ -88,35 +94,40 @@ const BlogArticleList = () => {
         <div className="grid lg:grid-cols-[1fr_280px] gap-12">
           {/* Article list */}
           <div>
-            {activeCategory === "전체" && storygSeriesPosts.length > 0 && (
-              <div className="mb-8 rounded-2xl border border-border bg-secondary/40 p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <p className="text-[11px] font-bold tracking-widest uppercase text-muted-foreground">
-                    Featured Series
-                  </p>
-                  <span className="text-[12px] text-muted-foreground">
-                    StoryG 실전/심화 {storygSeriesPosts.length}편
-                  </span>
-                </div>
+            {activeCategory === "전체" &&
+              featuredSeries.map((series) => (
+                <div
+                  key={series.key}
+                  className="mb-8 rounded-2xl border border-border bg-secondary/40 p-5"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-[11px] font-bold tracking-widest uppercase text-muted-foreground">
+                      Featured Series
+                    </p>
+                    <span className="text-[12px] text-muted-foreground">
+                      {series.label} {series.posts.length}편
+                    </span>
+                  </div>
+                  <p className="text-[12px] text-muted-foreground mb-4">{series.description}</p>
 
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {storygSeriesPosts.map((post, idx) => (
-                    <Link
-                      key={post.id}
-                      to={`/post/${post.id}`}
-                      className="group rounded-xl border border-border bg-background p-3 hover:bg-secondary transition-colors"
-                    >
-                      <p className="text-[11px] text-muted-foreground mb-1">
-                        {post.seriesLabel ?? `시리즈 ${idx + 1}`}
-                      </p>
-                      <p className="text-[13px] font-semibold leading-snug text-foreground line-clamp-2 group-hover:text-accent transition-colors">
-                        {post.title}
-                      </p>
-                    </Link>
-                  ))}
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {series.posts.map((post, idx) => (
+                      <Link
+                        key={post.id}
+                        to={`/post/${post.id}`}
+                        className="group rounded-xl border border-border bg-background p-3 hover:bg-secondary transition-colors"
+                      >
+                        <p className="text-[11px] text-muted-foreground mb-1">
+                          {post.seriesLabel ?? `시리즈 ${idx + 1}`}
+                        </p>
+                        <p className="text-[13px] font-semibold leading-snug text-foreground line-clamp-2 group-hover:text-accent transition-colors">
+                          {post.title}
+                        </p>
+                      </Link>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              ))}
 
             <div className="flex flex-col gap-0 divide-y divide-border">
               {paginated.length > 0 ? (
