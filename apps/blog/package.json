@@ -8,8 +8,9 @@
     "dev": "vite",
     "sitemap": "node ../../packages/build/generate-sitemap.mjs",
     "prerender": "node ../../packages/build/prerender.mjs",
-    "build": "npm run sitemap && vite build && npm run prerender",
-    "preview": "vite preview"
+    "build": "npm run sitemap && npm run feed && vite build && npm run prerender",
+    "preview": "vite preview",
+    "feed": "node ../../packages/build/generate-feed.mjs"
   },
   "dependencies": {
     "@btl/core": "*",

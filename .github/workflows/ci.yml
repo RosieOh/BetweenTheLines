@@ -54,6 +54,7 @@ jobs:
           test -f "$dist/index.html"
           test -f "$dist/404.html"
           test -f "$dist/sitemap.xml"
+          test -f "$dist/feed.xml"
           test -f "$dist/robots.txt"
           count=$(find "$dist/post" -name index.html | wc -l)
           echo "프리렌더된 포스트: $count개"
