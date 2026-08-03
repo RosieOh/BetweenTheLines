@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, ArrowUpDown, FileText } from "lucide-react";
 import { Link } from "react-router-dom";
 import BlogArticleCard from "./BlogArticleCard";
 import BlogSidebar from "./BlogSidebar";
+import SeriesShelf from "./SeriesShelf";
 import { categories, byNewest, byOldest, getPublishedPosts, seriesList } from "@btl/core";
 
 const PAGE_SIZE = 6;
@@ -60,6 +61,8 @@ const BlogArticleList = () => {
   return (
     <section className="pb-20">
       <div className="container">
+        {featuredSeries.length > 0 && <SeriesShelf series={featuredSeries} />}
+
         {/* Section title + sort */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-foreground">전체 아티클</h2>
@@ -94,41 +97,6 @@ const BlogArticleList = () => {
         <div className="grid lg:grid-cols-[1fr_280px] gap-12">
           {/* Article list */}
           <div>
-            {activeCategory === "전체" &&
-              featuredSeries.map((series) => (
-                <div
-                  key={series.key}
-                  className="mb-8 rounded-2xl border border-border bg-secondary/40 p-5"
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="text-[11px] font-bold tracking-widest uppercase text-muted-foreground">
-                      Featured Series
-                    </p>
-                    <span className="text-[12px] text-muted-foreground">
-                      {series.label} {series.posts.length}편
-                    </span>
-                  </div>
-                  <p className="text-[12px] text-muted-foreground mb-4">{series.description}</p>
-
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    {series.posts.map((post, idx) => (
-                      <Link
-                        key={post.id}
-                        to={`/post/${post.id}`}
-                        className="group rounded-xl border border-border bg-background p-3 hover:bg-secondary transition-colors"
-                      >
-                        <p className="text-[11px] text-muted-foreground mb-1">
-                          {post.seriesLabel ?? `시리즈 ${idx + 1}`}
-                        </p>
-                        <p className="text-[13px] font-semibold leading-snug text-foreground line-clamp-2 group-hover:text-accent transition-colors">
-                          {post.title}
-                        </p>
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              ))}
-
             <div className="flex flex-col gap-0 divide-y divide-border">
               {paginated.length > 0 ? (
                 paginated.map((post) => <BlogArticleCard key={post.id} post={post} />)
