@@ -4,8 +4,8 @@
 export type { PostMeta, PostData } from "./posts";
 export { categories, samplePosts, byNewest, byOldest } from "./posts";
 
-export { blogConfig, giscusConfig, categoryList, categoryMap, allCategoryKeys, allCategoryLabels } from "./blogConfig";
-export type { CategoryConfig } from "./blogConfig";
+export { blogConfig, giscusConfig, categoryList, categoryMap, allCategoryKeys, allCategoryLabels, seriesList, seriesMap } from "./blogConfig";
+export type { CategoryConfig, SeriesConfig } from "./blogConfig";
 
 export { categoryStyles } from "./categoryConfig";
 

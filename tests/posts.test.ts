@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 import { parseFrontmatter, estimateReadTime, readPostsMeta, formatDisplayDate } from "../packages/build/posts.mjs";
 import { samplePosts, byNewest, byOldest } from "@btl/core";
-import { categoryList } from "@btl/core";
+import { categoryList, seriesList } from "@btl/core";
 import { categoryKeys, staticRoutes } from "../packages/build/routes.mjs";
 
 const POSTS_DIR = join(process.cwd(), "content", "posts");
@@ -107,6 +107,35 @@ describe("정렬 비교자", () => {
       "2026-01-01",
       "2026-04-15",
     ]);
+  });
+});
+
+describe("시리즈 설정", () => {
+  const metas = readPostsMeta(POSTS_DIR);
+
+  it("모든 글의 series 가 blogConfig 에 정의돼 있다", () => {
+    const known = new Set(seriesList.map((s) => s.key));
+    for (const meta of metas) {
+      if (!meta.series) continue;
+      expect(known.has(meta.series), `${meta.id}: 미정의 시리즈 "${meta.series}"`).toBe(true);
+    }
+  });
+
+  it("정의된 시리즈에는 글이 하나 이상 있다", () => {
+    for (const series of seriesList) {
+      const count = metas.filter((m) => m.series === series.key).length;
+      expect(count, `${series.key}: 글이 없는 시리즈`).toBeGreaterThan(0);
+    }
+  });
+
+  it("시리즈 안에서 seriesOrder 가 중복되지 않는다", () => {
+    for (const series of seriesList) {
+      const orders = metas
+        .filter((m) => m.series === series.key)
+        .map((m) => m.seriesOrder)
+        .filter((o) => o !== undefined);
+      expect(new Set(orders).size, `${series.key}: seriesOrder 중복`).toBe(orders.length);
+    }
   });
 });
 

@@ -1,0 +1,340 @@
+---
+title: '[블로그 개선] 홈에서 전체 글 본문을 받고 있었다: 번들 41% 줄인 과정'
+date: '2026-08-03'
+author: '오태훈'
+description: 'import.meta.glob의 eager 옵션 때문에 목록 화면이 34편 전체 본문을 내려받고 있었습니다. Vite 가상 모듈로 메타데이터와 본문을 분리하고 홈 초기 로드를 250KB에서 147KB로 줄인 실측 기록입니다.'
+category: 'Frontend'
+tags: ['Vite', '번들최적화', 'CodeSplitting', 'React', '블로그개선']
+readTime: '12분'
+thumbnail: 'architecture'
+series: 'blog-rebuild-series'
+seriesOrder: 2
+seriesLabel: '블로그 개선 2'
+---
+
+# [블로그 개선] 홈에서 전체 글 본문을 받고 있었다
+
+블로그 성능을 볼 때 가장 먼저 하는 일은 빌드해서 청크 목록을 보는 것입니다.
+이 블로그는 한 번도 그걸 안 했던 것 같았고, 실제로 그랬습니다.
+
+```
+dist/assets/postStorage-Dvt4QGec.js    99.22 kB │ gzip:  51.03 kB
+dist/assets/BlogFooter-CL3ZOPU5.js    132.11 kB │ gzip:  43.91 kB
+dist/assets/index-hFx-oQT2.js         290.38 kB │ gzip:  94.45 kB
+dist/assets/PostDetail-CaeUBdqS.js    666.84 kB │ gzip: 232.58 kB
+
+(!) Some chunks are larger than 500 kB after minification.
+```
+
+`postStorage`가 99KB인 게 이상했습니다. 그 파일은 localStorage를 읽는 200줄짜리 모듈인데요.
+열어보니 34편의 마크다운 **전문**이 통째로 들어 있었습니다.
+
+## 🕰️ 사건 타임라인
+
+- 빌드 실행 → `postStorage` 청크 99KB, `PostDetail` 667KB 확인
+- 데이터 흐름 역추적 → `import.meta.glob({ eager: true })` 발견
+- Vite 플러그인으로 frontmatter만 주입하는 가상 모듈 설계
+- 본문은 글 단위 청크로 분리, 상세 진입 시점에만 로드
+- 하이라이터·애니메이션 라이브러리 경량화
+- `manualChunks` 최적화가 오히려 역효과인 것을 확인하고 되돌림
+
+## 🚨 문제
+
+원인은 `loadPosts.ts` 한 줄이었습니다.
+
+```ts
+const rawFiles = import.meta.glob("../posts/**/*.mdx", {
+  query: "?raw",
+  import: "default",
+  eager: true,          // ← 이것
+}) as Record<string, string>;
+```
+
+`eager: true`는 "빌드 시점에 전부 읽어서 모듈에 인라인하라"는 뜻입니다.
+그리고 이 모듈은 이런 체인으로 홈에 연결돼 있었습니다.
+
+```
+loadPosts.ts (34편 본문 인라인)
+   ↓ import
+data/posts.ts  → samplePosts = loadPostsFromFiles()   // 모듈 최상위 즉시 평가
+   ↓ import
+lib/postStorage.ts
+   ↓ import
+components/blog/BlogArticleList.tsx  →  홈
+```
+
+홈은 제목·요약·썸네일·날짜만 있으면 됩니다.
+그런데 본문 236KB(원본)를 전부 받고 있었습니다. gzip 후에도 51KB입니다.
+
+더 큰 문제는 **선형 증가**입니다. 글이 100편이 되면 홈 번들에 150KB가 얹힙니다.
+글 쓰는 걸 늘릴수록 첫 화면이 느려지는 구조는 블로그로서 방향이 반대입니다.
+
+## 🔍 왜 이렇게 됐나
+
+`eager: false`로 바꾸면 될 것 같지만 그렇지 않습니다.
+목록 화면은 **제목과 날짜를 즉시** 알아야 하고, 그 정보는 본문과 같은 `.mdx` 파일 안에 있습니다.
+
+```md
+---
+title: '...'
+date: '2026-04-15'
+category: 'SpringBoot'
+---
+
+# 본문 (여기가 무거움)
+```
+
+한 파일 안에 있으니 Vite가 쪼갤 수 없습니다.
+lazy로 바꾸면 목록을 그리기 위해 34개 청크를 전부 받아야 하고, 결국 더 나빠집니다.
+
+**메타데이터는 빌드 타임에 뽑아내고, 본문만 런타임에 지연 로드해야** 합니다.
+
+## 🛠️ 해결 1 — Vite 가상 모듈
+
+빌드 시점에 frontmatter만 파싱해 주입하는 플러그인을 만들었습니다.
+
+```js
+// plugins/vite-plugin-posts.mjs
+const VIRTUAL_ID = "virtual:posts-meta";
+const RESOLVED_ID = "\0" + VIRTUAL_ID;
+
+export function postsMetaPlugin({ postsDir }) {
+  return {
+    name: "vite-plugin-posts-meta",
+    resolveId(id) {
+      return id === VIRTUAL_ID ? RESOLVED_ID : null;
+    },
+    load(id) {
+      if (id !== RESOLVED_ID) return null;
+      return `export const postsMeta = ${JSON.stringify(readPostsMeta(postsDir))};`;
+    },
+    configureServer(server) {
+      // .mdx frontmatter 수정 시 즉시 반영되도록 무효화
+      const invalidate = (file) => {
+        if (!file.endsWith(".mdx")) return;
+        const mod = server.moduleGraph.getModuleById(RESOLVED_ID);
+        if (!mod) return;
+        server.moduleGraph.invalidateModule(mod);
+        server.ws.send({ type: "full-reload" });
+      };
+      server.watcher.on("add", invalidate);
+      server.watcher.on("unlink", invalidate);
+      server.watcher.on("change", invalidate);
+    },
+  };
+}
+```
+
+런타임 쪽은 본문 로더를 **lazy glob**으로 바꿨습니다.
+
+```ts
+import { postsMeta } from "virtual:posts-meta";
+
+// eager 가 아니므로 각 .mdx 가 별도 청크가 됩니다
+const contentLoaders = import.meta.glob("../posts/**/*.mdx", {
+  query: "?raw",
+  import: "default",
+}) as Record<string, () => Promise<string>>;
+
+export async function loadPostContent(id: string): Promise<string | null> {
+  const cached = contentCache.get(id);
+  if (cached !== undefined) return cached;
+
+  const loader = loaderById.get(id);
+  if (!loader) return null;
+
+  const content = stripFrontmatter(await loader());
+  contentCache.set(id, content);
+  return content;
+}
+```
+
+타입 차원에서도 실수를 막았습니다. 목록용 타입에서 `content`를 아예 제거했습니다.
+
+```ts
+export interface PostMeta {
+  id: string;
+  title: string;
+  // ... content 없음. 본문이 필요하면 loadPostContent(id)
+}
+```
+
+이제 카드 컴포넌트에서 `post.content`를 쓰려고 하면 컴파일이 실패합니다.
+
+## 🛠️ 해결 2 — 하이라이터 경량화
+
+`PostDetail` 667KB의 주범은 코드 하이라이터였습니다.
+
+```ts
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+```
+
+`Prism` 풀 빌드는 refractor의 **전 언어 정의**를 끌고 옵니다.
+실제로 글에서 쓰는 코드 펜스를 세어보니 12종뿐이었습니다.
+
+```
+16 text  13 java  13 bash  11 yaml  11 sql  9 json
+ 8 ts     5 http   3 python 3 groovy 2 properties 1 js
+```
+
+`PrismLight`로 바꾸고 쓰는 언어만 등록했습니다.
+
+```ts
+import { PrismLight } from "react-syntax-highlighter";
+import java from "react-syntax-highlighter/dist/esm/languages/prism/java";
+// ... 필요한 모듈들
+
+for (const definition of LANGUAGES) {
+  const { displayName, aliases } = definition;
+  PrismLight.registerLanguage(displayName, definition);
+  SUPPORTED.add(displayName);
+  for (const alias of aliases ?? []) SUPPORTED.add(alias);
+}
+
+// 등록되지 않은 언어는 평문으로 폴백 (에러 아님)
+export function resolveLanguage(language: string): string {
+  const key = language.toLowerCase();
+  return SUPPORTED.has(key) ? key : "text";
+}
+```
+
+### ⚠️ 여기서 조용히 틀렸던 것
+
+처음엔 별칭을 손으로 관리했습니다. `tsx`를 typescript 정의에 매핑하는 식으로요.
+
+```ts
+const ALIASES = { ts: "typescript", tsx: "typescript", js: "javascript" };
+for (const [alias, target] of Object.entries(ALIASES)) {
+  PrismLight.registerLanguage(alias, LANGUAGES[target]);   // ← 안 먹습니다
+}
+```
+
+동작하는 것처럼 보였습니다. 에러도 없고 코드 블록도 잘 나왔거든요.
+**하이라이팅만 안 됐습니다.** 회색 글자로 그냥 렌더되고 있었습니다.
+
+이유는 두 가지였습니다.
+
+- `PrismLight.registerLanguage(name, lang)`는 **첫 인자를 버리고** `refractor.register(lang)`만 호출합니다.
+  이름은 정의 안의 `displayName`에서 나옵니다. 즉 별칭으로 등록이 안 됩니다
+- **`tsx`/`jsx`는 typescript/javascript의 별칭이 아니라 별도 모듈**입니다
+
+반대로, 손으로 관리할 필요가 없었던 것도 있었습니다.
+refractor는 등록 시 **의존 언어와 별칭을 함께 처리**합니다.
+`typescript`만 넣으면 `javascript`·`clike`가 딸려오고 `ts` 별칭도 자동으로 붙습니다.
+
+정리하면 이렇습니다.
+
+| 오해 | 사실 |
+| --- | --- |
+| 별칭을 직접 등록해야 한다 | 모듈이 `aliases`로 이미 선언합니다 (`ts`, `js`, `yml`, `py`, `md`, `dockerfile`, `html` …) |
+| `tsx`는 typescript의 별칭이다 | **별도 모듈**입니다. 직접 import 해야 합니다 |
+| 의존 언어를 순서대로 넣어야 한다 | refractor가 알아서 끌어옵니다 |
+
+그리고 이 버그는 **테스트로 막았습니다.** 글에서 쓰는 모든 코드 펜스 언어가
+실제로 등록돼 있는지 검사합니다.
+
+```ts
+it("사용 중인 모든 펜스 언어가 등록돼 있다", () => {
+  const missing = [...fenceLanguages()]
+    .filter(([lang]) => lang !== "text" && resolveLanguage(lang) === "text")
+    .map(([lang, files]) => `${lang} (사용: ${files.join(", ")})`);
+
+  expect(missing).toEqual([]);
+});
+```
+
+바로 값을 했습니다. 이 글을 쓰면서 ` ```mdx `를 썼는데 그건 등록된 언어가 아니라
+평문으로 렌더될 뻔했고, 테스트가 잡아줬습니다.
+
+## 🛠️ 해결 3 — framer-motion
+
+`BlogFooter` 청크가 132KB로 잡혀 있었는데, 실제 내용은 framer-motion이었습니다.
+롤업이 공유 청크에 이름을 붙일 때 알파벳 순으로 아무 모듈 이름이나 가져다 쓴 것이었습니다.
+
+전부 걷어내는 대신 공식 경량화 경로인 `LazyMotion`을 썼습니다.
+
+```tsx
+<LazyMotion features={domAnimation} strict>
+```
+
+`strict` 옵션이 좋습니다. 무거운 `motion.*`을 쓰면 런타임 에러가 나므로,
+앞으로 누가 실수로 `motion.div`를 쓰면 즉시 알게 됩니다. 컴포넌트는 전부 `m.*`로 바꿨습니다.
+
+## ⚠️ 역효과였던 최적화
+
+`manualChunks`로 마크다운 관련 라이브러리를 한 청크로 묶어봤습니다.
+
+```ts
+manualChunks: {
+  react: ["react", "react-dom", "react-router-dom"],
+  markdown: ["react-markdown", "remark-gfm", "react-syntax-highlighter"],  // ← 이게 문제
+}
+```
+
+빌드 후 홈의 `index.html`을 열어보니 이렇게 돼 있었습니다.
+
+```html
+<link rel="modulepreload" href="/assets/markdown-5YOMpHHH.js">   <!-- 68 kB gzip -->
+```
+
+**상세 페이지에서만 쓰는 코드가 홈에서 프리로드되고 있었습니다.**
+`manualChunks`로 청크를 명시하면 롤업이 그것을 엔트리의 정적 의존으로 승격시킵니다.
+lazy 라우트 안에서만 import 하더라도 마찬가지입니다.
+
+되돌리고 주석을 남겼습니다.
+
+```ts
+// 마크다운/하이라이터는 여기서 묶지 않습니다 — 묶으면 엔트리의 정적 의존이 되어
+// 상세 페이지에서만 필요한 코드가 홈에서도 modulepreload 됩니다.
+manualChunks: {
+  react: ["react", "react-dom", "react-router-dom"],
+},
+```
+
+## 📊 결과
+
+전부 실측치입니다(gzip 기준).
+
+| 항목 | Before | After |
+| --- | ---: | ---: |
+| 포스트 본문 | 51.0 kB | **7.7 kB** |
+| framer-motion | 43.9 kB | **6.8 kB** |
+| PostDetail | 232.6 kB | **78.3 kB** |
+| CSS | 10.1 kB | **7.5 kB** |
+| **홈 초기 로드** | **~250 kB** | **~147 kB** |
+
+상세 페이지는 78KB로 **-65%**, 홈은 **-41%** 입니다.
+
+부수 효과도 있었습니다. 본문이 글 단위 청크(2~3KB)로 쪼개지면서
+**글을 추가해도 홈 번들이 커지지 않는 구조**가 됐습니다. 이게 사실 수치보다 중요합니다.
+
+## 🧪 검색은 어떻게 했나
+
+전문 검색은 본문이 필요합니다. 여기만 예외로 전체 본문을 끌어옵니다.
+
+```ts
+export async function searchPosts(query: string, category: string) {
+  const candidates = getPublishedPosts().filter(/* 카테고리 */);
+
+  // 메타데이터만으로 판정되는 글은 본문을 볼 필요가 없습니다
+  const metaHits = candidates.filter(matchesMeta);
+  if (metaHits.length === candidates.length) return metaHits.sort(byNewest);
+
+  const contents = await loadAllPostContents();   // 이때만 전체 로드
+  return candidates.filter((post) => {
+    if (matchesMeta(post)) return true;
+    return (contents.get(post.id) ?? "").toLowerCase().includes(q);
+  }).sort(byNewest);
+}
+```
+
+검색 화면에 들어온 사용자만 비용을 냅니다. 목록·상세는 영향이 없습니다.
+입력에는 300ms 디바운스를 걸어 타이핑 중 매 글자마다 도는 것도 막았습니다.
+
+## 📌 정리
+
+- `import.meta.glob`의 `eager: true`는 **"이 파일들을 지금 이 번들에 넣어라"** 입니다. 목록 화면에서 쓰면 위험합니다
+- 메타데이터와 본문이 한 파일에 있으면 번들러가 못 쪼갭니다. **빌드 타임에 갈라야** 합니다
+- 타입에서 `content`를 제거하면 실수가 컴파일 에러가 됩니다. 규칙보다 타입이 낫습니다
+- `manualChunks`는 청크를 엔트리의 정적 의존으로 만들 수 있습니다. **적용 후 `index.html`의 modulepreload를 반드시 확인하세요**
+- 청크 이름은 내용물을 뜻하지 않습니다. `BlogFooter` 132KB는 framer-motion이었습니다

@@ -1,0 +1,216 @@
+---
+title: '[Friday] Claude Code 세션 로그를 지식그래프로: JSONL 파싱에서 만난 것들'
+date: '2026-08-03'
+author: '오태훈'
+description: '한 달치 390MB 세션 로그를 파싱해 SQLite 그래프로 만드는 과정에서 만난 문제들. 서브에이전트가 부모 세션을 삼키고, 드라이브 문자 대소문자가 프로젝트를 쪼개고, 어떤 레코드는 사람이 말한 게 아니었습니다.'
+category: 'DataAnalysis'
+tags: ['ClaudeCode', 'JSONL', 'SQLite', '데이터파이프라인', 'Friday']
+readTime: '13분'
+thumbnail: 'ai'
+series: 'friday-series'
+seriesOrder: 1
+seriesLabel: 'Friday 1'
+---
+
+# [Friday] Claude Code 세션 로그를 지식그래프로
+
+Claude Code로 한 달쯤 일하고 나니 `~/.claude/projects` 밑에 이런 게 쌓여 있었습니다.
+
+```
+28개 프로젝트 / 168개 세션 / 390 MB
+```
+
+전부 JSONL입니다. 그런데 이걸 다시 볼 방법이 없었습니다.
+"그때 Jenkins 파이프라인 어떻게 짰더라"를 찾으려면 폴더를 뒤져야 했고,
+파일명은 UUID라 어느 게 뭔지 알 수 없었습니다.
+
+그래서 파싱해서 그래프로 만들기로 했습니다. **Friday**라고 이름 붙인 도구입니다.
+
+```
+~/.claude/projects/*.jsonl
+        |  extract.py      결정적 파싱, 증분, LLM 없음
+        v
+   graph.sqlite  <--- topics.py   유일한 LLM 단계
+        |
+        v
+   obsidian.py -> vault/   (Sessions / Projects / Models / Topics)
+   web.py      -> graph.html (서버 없는 단일 페이지)
+```
+
+이 글은 첫 단계, **JSONL을 읽는 부분**에서 만난 것들입니다.
+
+## 📦 레코드 타입은 생각보다 적었다
+
+전체 파일을 훑어보니 실제로 처리해야 할 `type`은 4가지뿐이었습니다.
+
+| type | 처리 |
+| --- | --- |
+| `ai-title` | `aiTitle` 필드 → 세션 제목 |
+| `file-history-snapshot` | 건드린 파일 경로 수집 |
+| `user` / `assistant` | 턴·토큰·툴콜 집계 |
+| 그 외 | 무시 |
+
+`ai-title`이 반가웠습니다. **Claude Code가 세션 제목을 이미 만들어서 로그에 넣어둡니다.**
+제목을 뽑겠다고 LLM을 부를 필요가 없었습니다. 공짜로 얻은 셈입니다.
+
+파일 경로 키는 도구마다 달라서 세 가지를 다 봐야 했습니다.
+
+```python
+PATH_KEYS = ("file_path", "notebook_path", "filePath")
+```
+
+## 🕸️ parentUuid — 대화는 트리다
+
+각 레코드에 `parentUuid`가 있습니다. 이게 재밌습니다.
+
+대화를 선형 리스트로 생각하기 쉽지만, 실제로는 **DAG**입니다.
+사용자가 메시지를 편집하거나 되돌리면(rewind) 같은 부모에서 가지가 갈라집니다.
+
+그래서 `parent_uuid`를 컬럼으로 보존하고 인덱스를 걸었습니다.
+나중에 이런 질의로 분기점을 찾을 수 있습니다.
+
+```sql
+SELECT session_id, parent_uuid FROM turn
+WHERE parent_uuid IS NOT NULL
+GROUP BY session_id, parent_uuid
+HAVING COUNT(*) > 1
+```
+
+**같은 부모를 두 턴 이상이 가리키면 그 지점에서 대화를 되돌렸다는 뜻입니다.**
+"어디서 방향을 틀었나"를 사후에 볼 수 있게 됩니다.
+
+## 🐛 사건 1 — 서브에이전트가 부모 세션을 삼켰다
+
+파싱을 돌리고 결과를 보는데 숫자가 안 맞았습니다.
+
+```
+jsonl 파일: 169개
+세션:        72개
+```
+
+169개 파일이 72개 세션으로 뭉개졌습니다.
+
+원인은 **서브에이전트 전사(`agent-*.jsonl`)가 부모와 같은 `sessionId`를 쓴다**는 것이었습니다.
+서브에이전트를 39개 띄운 세션이 있었는데, 그 39개의 작업이 전부 부모 세션 하나에 흡수되고 있었습니다.
+"이 세션에서 파일 몇 개를 건드렸나" 같은 통계가 전부 왜곡됩니다.
+
+`sessionId`만으로는 구분이 안 되니 파일명을 봤습니다.
+
+```python
+agent_file = path.name.startswith("agent-")
+node_id = "%s#%s" % (sid, path.stem) if agent_file else sid
+```
+
+서브에이전트는 별도 노드로 만들되 `parent_session`으로 부모를 가리키게 했습니다.
+수정 후 **169개 파일 = 169개 세션**으로 정확히 맞았습니다.
+
+## 🐛 사건 2 — `C:/` 와 `c:/` 는 다른 프로젝트였다
+
+프로젝트 노트를 생성했는데 개수가 이상했습니다.
+
+```
+DB의 프로젝트: 29개
+생성된 노트:   27개
+```
+
+Windows에서 **세션을 어떻게 실행했느냐에 따라 같은 디렉터리가 `C:/x` 로도 `c:/x` 로도 기록됩니다.**
+VS Code에서 열었을 때와 터미널에서 실행했을 때가 달랐습니다.
+
+프로젝트 id를 정규화된 cwd로 쓰고 있었으니, 같은 프로젝트가 두 노드로 쪼개진 것이었습니다.
+
+```python
+def norm_path(p):
+    """Windows hands us the same directory as both 'C:/x' and 'c:/x'
+    depending on how the session was launched."""
+    # 드라이브 문자만 소문자로 폴딩
+```
+
+경로 전체를 소문자로 만들면 안 됩니다. 실제 파일명 대소문자가 뭉개지니까요.
+**드라이브 문자만** 접었습니다. 결과는 28 = 28.
+
+## 🧹 사람이 말한 게 아닌 것들
+
+대화 본문을 뽑을 때 걸러야 할 게 여럿 있었습니다.
+
+**IDE 주입 레코드** — `user` 타입인데 사람이 타이핑한 게 아닙니다.
+
+```
+<ide_opened_file>...</ide_opened_file>
+<system-reminder>...</system-reminder>
+```
+
+`<`로 시작하거나 `system-reminder`를 포함한 텍스트는 제외했습니다.
+실제로 이것만으로 이루어진 세션도 있었습니다. `user` 레코드 6개가 전부 IDE 주입이고
+assistant 응답이 아예 없는, 열자마자 중단된 세션이었습니다.
+
+**`<synthetic>` 모델** — 실제 모델 호출이 아니므로 모델 통계에서 뺐습니다.
+
+**`isSidechain`** — 서브에이전트 전사에 속한 턴입니다.
+재밌는 건 이걸 **파싱 단계에서는 쓰지 않고 대화 추출 단계에서만** 필터했다는 점입니다.
+턴 수와 토큰은 세도 되지만, 대화 본문에 넣으면 분량이 두 배가 되니까요.
+
+## ⚡ 증분 파싱
+
+390MB를 매번 다시 읽을 수는 없습니다. `source_file` 테이블에 파싱 시점을 기록하고
+size와 mtime이 그대로면 건너뜁니다.
+
+```python
+# size 동일 AND mtime 차이 < 1e-6 이면 스킵
+```
+
+mtime을 부동소수로 비교할 때 `==`를 쓰면 파일시스템에 따라 미묘하게 어긋납니다.
+엡실론 비교가 필요했습니다.
+
+## 🗄️ 최종 스키마
+
+```sql
+source_file(path PK, size, mtime, n_lines, parsed_at)      -- 증분 캐시
+project(id PK, path, name)                                  -- id = 정규화된 cwd
+session(id PK, project_id, title, started_at, ended_at,
+        n_turns, n_user, n_assistant, git_branch, cc_version,
+        is_agent, agent_id, parent_session, source_file)
+turn(uuid PK, session_id, parent_uuid, role, ts, model,
+     in_tok, out_tok, cache_read, cache_create, n_tool_use)
+session_model(session_id, model, n_msgs, in_tok, out_tok, ...)
+session_tool(session_id, tool, n)
+session_file(session_id, path, n, wrote)
+```
+
+`turn.uuid`를 PK로 두고 `INSERT OR REPLACE`를 쓰면 중복 레코드가 구조적으로 정리됩니다.
+파일을 다시 읽어도 같은 uuid는 덮어쓰기 되니까요.
+
+## 📊 파싱해놓고 보니
+
+숫자가 나오니 몰랐던 게 보였습니다.
+
+- **캐시 히트율 95%** — 누적 `cache_read`가 14.9B 토큰
+- **opus-4-8 42,971 메시지 vs opus-5 207 메시지** — 모델 전환이 최근이었다는 게 그대로 드러남
+- 한 세션에서 **서브에이전트 39개, 5,920턴**
+
+특히 "어떤 파일들이 자주 같이 수정되는가"를 보려고 co-edit 쌍을 뽑았는데,
+처음엔 결과가 전부 똑같아 보였습니다. 경로 **앞부분**을 잘라 보여준 탓이었습니다.
+
+```
+c:/Users/vrsoft/Desktop/DevRosieOh/study/...
+c:/Users/vrsoft/Desktop/DevRosieOh/study/...
+```
+
+공통 접두사가 너무 길어서 아무 정보가 없었습니다. 꼬리를 보이도록 바꿨습니다.
+
+```sql
+substr(path, -52)   -- 앞이 아니라 뒤를 자른다
+```
+
+사소하지만, **로컬 경로를 다루는 도구에서는 거의 항상 뒤가 정보**입니다.
+
+## 📌 정리
+
+- Claude Code는 `ai-title`로 **세션 제목을 이미 제공**합니다. LLM 부를 필요 없습니다
+- `parentUuid`를 보존하면 **대화를 되돌린 지점**을 사후에 찾을 수 있습니다
+- **서브에이전트는 부모와 `sessionId`를 공유합니다.** 파일명으로 구분해야 합니다
+- Windows에서 같은 디렉터리가 `C:/`와 `c:/`로 갈립니다. **드라이브 문자만** 정규화하세요
+- `user` 타입이라고 다 사람이 말한 게 아닙니다. IDE 주입 레코드를 걸러야 합니다
+- 경로를 화면에 자를 땐 **앞이 아니라 뒤를 남기세요**
+
+다음 글에서는 이 데이터에 주제를 붙이는 과정을 다룹니다.
+297개 라벨이 나왔고, 그중 88%가 딱 한 세션에만 등장했습니다.

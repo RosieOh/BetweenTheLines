@@ -21,6 +21,39 @@ export const giscusConfig = {
   lang: "ko",
 } as const;
 
+// ── 시리즈 설정 ───────────────────────────────────────────────
+// 홈의 "Featured Series" 영역에 노출할 시리즈입니다.
+// .mdx frontmatter 의 series 값과 key 가 일치해야 합니다.
+// 배열 순서대로 표시되며, 비우면 영역 자체가 사라집니다.
+
+export interface SeriesConfig {
+  key: string;
+  label: string;
+  description: string;
+}
+
+export const seriesList: SeriesConfig[] = [
+  {
+    key: "friday-series",
+    label: "Friday",
+    description: "Claude Code 세션 로그를 지식그래프로 만든 기록",
+  },
+  {
+    key: "blog-rebuild-series",
+    label: "블로그 개선",
+    description: "이 블로그를 직접 뜯어고친 과정",
+  },
+  {
+    key: "storyg-realworld-series",
+    label: "StoryG 실전/심화",
+    description: "StoryG 운영에서 만난 문제와 해결 기록",
+  },
+];
+
+export const seriesMap: Record<string, SeriesConfig> = Object.fromEntries(
+  seriesList.map((s) => [s.key, s])
+);
+
 // ── 카테고리 설정 ─────────────────────────────────────────────
 // 카테고리를 추가/제거하려면 이 배열을 수정하세요.
 // label: 화면에 표시될 이름

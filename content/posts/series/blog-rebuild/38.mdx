@@ -1,0 +1,229 @@
+---
+title: '[블로그 개선] 공유 카드가 전부 똑같았다: SPA에 프리렌더를 붙인 이유'
+date: '2026-08-03'
+author: '오태훈'
+description: 'useEffect로 주입한 OG 태그는 JS를 실행하지 않는 크롤러에게 보이지 않습니다. 45개 라우트에 정적 HTML을 생성해 공유 카드와 검색 스니펫을 살린 과정, 그리고 완전한 SSR을 선택하지 않은 이유를 정리합니다.'
+category: 'Frontend'
+tags: ['SEO', 'OpenGraph', 'Prerender', 'SPA', '블로그개선']
+readTime: '11분'
+thumbnail: 'communication'
+series: 'blog-rebuild-series'
+seriesOrder: 3
+seriesLabel: '블로그 개선 3'
+---
+
+# [블로그 개선] 공유 카드가 전부 똑같았다
+
+이 블로그의 상세 페이지에는 OG 태그를 넣는 코드가 잘 들어가 있었습니다.
+
+```tsx
+useEffect(() => {
+  document.title = `${post.title} | Between the Lines`;
+
+  const restores = [
+    setMeta("og:title", post.title, true),
+    setMeta("og:description", post.excerpt, true),
+    setMeta("og:image", post.thumbnail, true),
+    // ...
+  ];
+
+  return () => {
+    document.title = prevTitle;
+    restores.forEach((r) => r());   // 언마운트 시 원복까지 신경 씀
+  };
+}, [post]);
+```
+
+정리(cleanup)까지 챙긴 꼼꼼한 코드입니다.
+그런데 이 블로그의 글 링크를 어디에 붙여넣어도 카드는 전부 이렇게 떴을 겁니다.
+
+> **Between the Lines**
+> 오늘을 새롭게 내일을 이롭게 기록합니다.
+
+34편이 전부 같은 카드였습니다.
+
+## 🕰️ 사건 타임라인
+
+- SEO 점검 중 `index.html`의 기본 OG와 런타임 주입 OG가 이중으로 존재하는 것을 확인
+- `robots.txt`에 Twitterbot·facebookexternalhit이 **명시적으로 허용**돼 있는 것을 발견 — 의도와 결과가 어긋남
+- 완전한 SSR과 메타 프리렌더 중 후자를 선택
+- 빌드 후 45개 라우트에 정적 HTML 생성하는 스크립트 작성
+- 실제 산출물의 canonical·OG·JSON-LD를 직접 열어 검증
+
+## 🚨 문제
+
+`useEffect`는 **JS가 실행된 뒤에** 돕니다.
+그런데 공유 카드를 만드는 크롤러 대부분은 JS를 실행하지 않습니다.
+
+| 크롤러 | JS 실행 | 결과 |
+| --- | --- | --- |
+| Twitterbot | ✗ | `index.html`의 기본 OG |
+| facebookexternalhit | ✗ | 기본 OG |
+| 카카오톡 | ✗ | 기본 OG |
+| Slackbot | ✗ | 기본 OG |
+| Googlebot | ○ (렌더링 큐) | 글별 OG (지연됨) |
+
+Googlebot은 JS를 실행하므로 결국은 제대로 봅니다.
+하지만 **링크를 공유하는 순간 뜨는 카드**는 전부 크롤러 쪽입니다.
+
+이 블로그가 특히 아까웠던 건 `robots.txt`가 이랬다는 점입니다.
+
+```
+User-agent: Twitterbot
+Allow: /
+
+User-agent: facebookexternalhit
+Allow: /
+```
+
+**봇을 명시적으로 초대해놓고 정작 보여줄 게 없는 상태**였습니다.
+누군가 이 봇들을 신경 써서 적어뒀다는 뜻인데, 그 의도가 코드에서 끊겨 있었습니다.
+
+## 🤔 선택: SSR인가 메타 프리렌더인가
+
+두 가지 길이 있었습니다.
+
+**A. 완전한 SSR** — `react-dom/server`로 본문 HTML까지 서버에서 렌더
+**B. 메타 프리렌더** — `<head>`만 라우트별로 정적 생성, 본문은 기존대로 클라이언트 렌더
+
+A를 검토하다 접었습니다. 이 앱에는 SSR을 막는 코드가 여럿 있었습니다.
+
+- `postStorage`가 모듈 최상위에서 `localStorage`를 읽습니다 → 서버에서 `ReferenceError`
+- `IntersectionObserver`로 목차를 활성화합니다
+- `window.location.href`를 공유 버튼에서 참조합니다
+- `next-themes`가 초기 테마를 클라이언트에서 결정합니다 → 하이드레이션 불일치 위험
+
+전부 우회는 가능합니다. `typeof window` 가드를 두르고, 테마는 `suppressHydrationWarning`으로 넘기고요.
+그런데 **얻는 것과 리스크를 비교했을 때** 답이 명확했습니다.
+
+- 해결하려는 문제는 "공유 카드와 검색 스니펫"이고, 그건 **`<head>`만으로 100% 해결**됩니다
+- Googlebot은 어차피 JS를 실행하므로 본문 SSR의 SEO 이득이 크지 않습니다
+- 하이드레이션 불일치는 **화면이 깜빡이거나 깨지는** 형태로 사용자에게 직접 드러납니다
+
+정적 블로그에서 하이드레이션 리스크를 감수하면서 얻을 이득이 아니라고 판단했습니다.
+**B를 택하되, 그 범위를 글에 명시**하기로 했습니다.
+
+## 🛠️ 해결
+
+빌드가 끝난 뒤 `dist/index.html`을 템플릿 삼아 라우트별 사본을 만듭니다.
+
+```js
+function buildPage({ route, head, noscript }) {
+  let html = stripDefaultMeta(template);              // 기본 title/og/twitter 제거
+  html = html.replace("</head>", `  ${head}\n  </head>`);
+  html = html.replace('<div id="root"></div>', `<div id="root"></div>\n    ${noscript}`);
+
+  const outDir = route === "/" ? DIST : join(DIST, route.replace(/^\//, ""));
+  mkdirSync(outDir, { recursive: true });
+  writeFileSync(join(outDir, "index.html"), html, "utf8");
+}
+```
+
+먼저 기존 태그를 **걷어내는 게 중요합니다.** 안 그러면 같은 `og:title`이 두 번 들어가고
+크롤러마다 어느 쪽을 읽을지 달라집니다.
+
+```js
+function stripDefaultMeta(html) {
+  return html
+    .replace(/<title>[\s\S]*?<\/title>/i, "")
+    .replace(/<meta\s+name="description"[^>]*>/gi, "")
+    .replace(/<meta\s+property="og:[^"]*"[^>]*>/gi, "")
+    .replace(/<meta\s+name="twitter:[^"]*"[^>]*>/gi, "")
+    .replace(/<link\s+rel="canonical"[^>]*>/gi, "");
+}
+```
+
+그리고 글마다 진짜 메타데이터를 넣습니다. JSON-LD도 함께 넣었습니다.
+
+```js
+jsonLd: {
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  headline: post.title,
+  description: post.excerpt,
+  image,
+  datePublished: post.rawDate,
+  author: { "@type": "Person", name: post.author },
+  mainEntityOfPage: { "@type": "WebPage", "@id": url },
+  keywords: post.tags.join(", "),
+  articleSection: post.category,
+}
+```
+
+### 함정 1 — 썸네일은 해시가 붙은 절대 URL이어야 한다
+
+`og:image`에 `/assets/thumb-ai.jpg` 같은 상대 경로를 넣으면 크롤러가 못 읽습니다.
+그런데 빌드하면 파일명에 해시가 붙습니다. 산출물에서 찾아야 합니다.
+
+```js
+function thumbnailUrl(key) {
+  const match = assetFiles.find(
+    (f) => f.startsWith(`thumb-${key}-`) || f.startsWith(`thumb-${key}.`)
+  );
+  return match ? absoluteUrl(`/assets/${match}`) : absoluteUrl("/favicon.ico");
+}
+```
+
+### 함정 2 — JSON-LD 안의 `<`
+
+`JSON.stringify` 결과를 `<script>` 안에 그대로 넣으면
+본문에 `</script>` 문자열이 있을 때 태그가 조기 종료됩니다.
+
+```js
+`<script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, "\\u003c")}</script>`
+```
+
+### 함정 3 — 404 폴백을 언제 복사하느냐
+
+GitHub Pages는 없는 경로에 `404.html`을 줍니다. SPA 폴백으로 흔히 쓰는 방식입니다.
+그런데 이걸 **홈 프리렌더 전에** 복사하면 태그가 제거된 껍데기가 들어갑니다.
+프리렌더가 전부 끝난 뒤에 복사해야 합니다.
+
+## ✅ 검증
+
+산출물을 직접 열어 확인했습니다.
+
+```
+canonical  https://rosieoh.github.io/BetweenTheLines/post/35
+og:title   [StoryG 프로젝트] AI 재생성 불능 이슈 해결기: stale 캐시와 갱신 실패를 끊어낸 방법 | Between the Lines
+og:type    article
+og:image   https://rosieoh.github.io/BetweenTheLines/assets/thumb-ai-review-C2vjxtIE.jpg
+```
+
+`<noscript>`에는 제목·요약·저자·날짜를 넣어 JS 없이도 최소한의 내용이 남게 했습니다.
+
+라우팅도 GitHub Pages와 같은 규칙(디렉터리 인덱스 + 404 폴백)으로 서빙해 확인했습니다.
+
+```
+/BetweenTheLines/                     200  2405 bytes   ← 홈
+/BetweenTheLines/post/35              200  3678 bytes   ← 글별로 크기가 다름
+/BetweenTheLines/category/springboot  200  1922 bytes
+/BetweenTheLines/tag/AI               404              ← 프리렌더 대상 아님, SPA 폴백
+```
+
+크기가 다르다는 게 핵심입니다. 전부 2405였다면 프리렌더가 안 먹은 것입니다.
+
+## 🧯 CI로 굳히기
+
+프리렌더는 **조용히 실패하기 쉽습니다.** 빌드는 성공하고 파일도 생기는데 내용만 비는 식입니다.
+CI에서 산출물을 직접 검사하게 했습니다.
+
+```yaml
+- name: 프리렌더 산출물 검증
+  run: |
+    dist=apps/blog/dist
+    test -f "$dist/index.html"
+    test -f "$dist/404.html"
+    test -f "$dist/sitemap.xml"
+    count=$(find "$dist/post" -name index.html | wc -l)
+    echo "프리렌더된 포스트: $count개"
+    test "$count" -gt 0
+```
+
+## 📌 정리
+
+- `useEffect`로 넣는 OG 태그는 **Googlebot 말고는 아무도 못 봅니다.** 공유 카드는 전부 무용지물입니다
+- `robots.txt`에 봇을 허용해두는 것과 그 봇이 볼 게 있는 것은 별개입니다
+- **완전한 SSR이 항상 정답은 아닙니다.** 해결하려는 문제가 `<head>`에 있다면 `<head>`만 정적으로 만들면 됩니다
+- 대신 **그 범위를 문서에 적어두세요.** "프리렌더 했음"과 "메타데이터까지만 프리렌더 했음"은 다음 사람에게 완전히 다른 정보입니다
+- 프리렌더는 조용히 실패합니다. 산출물 검증을 CI에 넣으세요
