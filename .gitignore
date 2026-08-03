@@ -28,3 +28,4 @@ ourstoryg/
 # 빌드 시 생성됩니다 (npm run sitemap)
 apps/blog/public/sitemap.xml
 apps/blog/public/robots.txt
+apps/blog/public/feed.xml

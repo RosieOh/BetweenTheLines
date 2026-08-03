@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
 import type { PostMeta, SeriesConfig } from "@btl/core";
+import { stripSeriesPrefix } from "@/lib/seriesTitle";
 
 export interface SeriesGroup extends SeriesConfig {
   posts: PostMeta[];
@@ -9,14 +10,6 @@ export interface SeriesGroup extends SeriesConfig {
 
 /** 접기 전에 보여줄 편수. 시리즈 개수와 무관하게 블록 높이를 일정하게 유지합니다. */
 const VISIBLE_COUNT = 5;
-
-/**
- * 시리즈 안에서는 시리즈 이름이 이미 문맥이므로 제목 앞의 `[...]` 접두사는 중복입니다.
- * 예) "[Friday] 297개 라벨을 40개로" → "297개 라벨을 40개로"
- */
-function stripSeriesPrefix(title: string): string {
-  return title.replace(/^\s*\[[^\]]+\]\s*/, "");
-}
 
 /**
  * 시리즈를 한 블록에 모아 보여줍니다.

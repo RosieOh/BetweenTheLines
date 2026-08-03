@@ -7,11 +7,14 @@ import blogConfigJson from "../../../blog.config.json";
 
 export const blogConfig = blogConfigJson;
 
+// giscus 의 repo/repoId/categoryId 는 클라이언트 HTML 에 그대로 실리는 **공개 식별자**입니다.
+// 시크릿이 아니므로 blog.config.json 에 두고, 필요할 때만 env 로 덮어씁니다.
+// (예전에는 env 전용이라 CI 에 값이 없으면 배포본에서 댓글이 통째로 사라졌습니다)
 export const giscusConfig = {
-  repo: "RosieOh/RosieTechBlog",
-  repoId: import.meta.env.VITE_GISCUS_REPO_ID ?? "",
-  category: "Announcements",
-  categoryId: import.meta.env.VITE_GISCUS_CATEGORY_ID ?? "",
+  repo: import.meta.env.VITE_GISCUS_REPO ?? blogConfigJson.giscus.repo,
+  repoId: import.meta.env.VITE_GISCUS_REPO_ID ?? blogConfigJson.giscus.repoId,
+  category: blogConfigJson.giscus.category,
+  categoryId: import.meta.env.VITE_GISCUS_CATEGORY_ID ?? blogConfigJson.giscus.categoryId,
   mapping: "pathname",
   strict: "0",
   reactionsEnabled: "1",

@@ -57,6 +57,7 @@ function renderHead({ title, description, url, image, type, jsonLd }) {
   const tags = [
     `<title>${escapeHtml(title)}</title>`,
     `<link rel="canonical" href="${escapeHtml(url)}" />`,
+    `<link rel="alternate" type="application/rss+xml" title="${escapeHtml(blogMeta.name)}" href="${escapeHtml(absoluteUrl("/feed.xml"))}" />`,
     `<meta name="description" content="${escapeHtml(description)}" />`,
     `<meta property="og:site_name" content="${escapeHtml(blogMeta.name)}" />`,
     `<meta property="og:title" content="${escapeHtml(title)}" />`,

@@ -9,5 +9,11 @@
     "github": "https://github.com/RosieOh",
     "bio": "얻은 지식을 프로젝트에 적용하고, 기록하는 습관으로 배운 것을 남기는 개발자입니다."
   },
-  "copyright": "© 2025 Between the Lines. All rights reserved."
+  "copyright": "© 2025 Between the Lines. All rights reserved.",
+  "giscus": {
+    "repo": "RosieOh/BetweenTheLines",
+    "repoId": "R_kgDOSCWghw",
+    "category": "Announcements",
+    "categoryId": "DIC_kwDOSCWgh84DCjgO"
+  }
 }

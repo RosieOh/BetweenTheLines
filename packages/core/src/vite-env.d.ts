@@ -10,6 +10,8 @@ declare module "virtual:posts-meta" {
 }
 
 interface ImportMetaEnv {
+  /** giscus 설정 재정의 — 평소에는 blog.config.json 값을 씁니다. */
+  readonly VITE_GISCUS_REPO?: string;
   readonly VITE_GISCUS_REPO_ID?: string;
   readonly VITE_GISCUS_CATEGORY_ID?: string;
 }
