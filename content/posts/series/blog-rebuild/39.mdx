@@ -20,7 +20,7 @@ seriesLabel: '블로그 개선 4'
 
 ```ts
 // src/lib/postStorage.ts
-const ADMIN_PASSWORD = "rosie2025";
+const ADMIN_PASSWORD = "<평문 비밀번호>";   // 실제 값이 그대로 들어 있었습니다
 ```
 
 프론트 전용 데모라 주석까지 달려 있었지만, 어쨌든 **공개 사이트를 받은 사람 누구나 볼 수 있는 문자열**이었습니다.
@@ -175,7 +175,7 @@ export function blogLink(path = "/"): string {
 
 "분리했다"는 말은 검증 가능해야 합니다. 배포본을 직접 뒤졌습니다.
 
-| 대상 | `rosie2025` | `rosie_blog_auth` | `AdminDashboard` | `recharts` |
+| 대상 | 비밀번호 문자열 | 세션 스토리지 키 | 관리자 컴포넌트 | 차트 라이브러리 |
 | --- | --- | --- | --- | --- |
 | `apps/blog/dist` | 없음 | 없음 | 없음 | 없음 |
 | `apps/admin/dist` | 있음(정상) | 있음(정상) | 있음 | 있음 |
@@ -191,7 +191,7 @@ export function blogLink(path = "/"): string {
 - name: 블로그 번들에 관리자 코드 미포함 확인
   run: |
     dist=apps/blog/dist
-    for needle in rosie2025 rosie_blog_auth AdminDashboard; do
+    for needle in "${ADMIN_MARKERS[@]}"; do      # 비밀번호·세션키·관리자 컴포넌트명
       if grep -rqF "$needle" "$dist"; then
         echo "::error::공개 배포본에 관리자 코드가 포함됐습니다: $needle"
         exit 1
@@ -201,6 +201,21 @@ export function blogLink(path = "/"): string {
 
 누군가 실수로 블로그 앱에서 관리자 모듈을 import 하면 빌드가 실패합니다.
 **구조로 나눈 것을 파이프라인으로 굳히는 단계**입니다. 이게 없으면 시간이 지나며 다시 섞입니다.
+
+### 그리고 이 검사가 바로 저를 잡았습니다
+
+이 글을 쓰면서 **문제의 비밀번호를 본문에 그대로 인용**했습니다.
+글이 빌드되어 공개 번들에 들어가자 CI가 즉시 실패했습니다.
+
+```
+##[error]공개 배포본에 관리자 코드가 포함됐습니다: <비밀번호 문자열>
+```
+
+기술적으로는 "코드가 섞인" 게 아니라 "글에 문자열이 있는" 것이니 오탐에 가깝습니다.
+그런데 **결과적으로는 정탐이었습니다.** 공개 사이트에 그 문자열이 나가는 건 매한가지니까요.
+
+검사를 느슨하게 만드는 대신 글에서 값을 마스킹했습니다.
+비밀 문자열을 grep 하는 가드는 이런 식으로 **의도치 않은 경로까지 잡아줍니다.**
 
 ## 📌 정리
 
