@@ -1,0 +1,19 @@
+{
+  "name": "@btl/core",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "포스트 데이터·블로그 설정·스토리지·디자인 토큰. 블로그와 관리자 앱이 공유하는 도메인 계층입니다.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css",
+    "./assets/*": "./src/assets/*"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.6.0"
+  },
+  "peerDependencies": {
+    "@btl/build": "*"
+  }
+}

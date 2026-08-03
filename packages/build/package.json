@@ -1,0 +1,21 @@
+{
+  "name": "@btl/build",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "포스트 파싱·sitemap·프리렌더 등 빌드 타임 도구. 블로그와 관리자 앱이 공유합니다.",
+  "exports": {
+    "./posts": "./posts.mjs",
+    "./blogMeta": "./blogMeta.mjs",
+    "./siteUrl": "./siteUrl.mjs",
+    "./routes": "./routes.mjs",
+    "./vite-plugin-posts": {
+      "types": "./vite-plugin-posts.d.ts",
+      "default": "./vite-plugin-posts.mjs"
+    }
+  },
+  "bin": {
+    "btl-sitemap": "./generate-sitemap.mjs",
+    "btl-prerender": "./prerender.mjs"
+  }
+}

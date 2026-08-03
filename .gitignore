@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+*.tsbuildinfo
 
 # Editor directories and files
 .vscode/*
@@ -23,3 +24,7 @@ dist-ssr
 *.sln
 *.sw?
 ourstoryg/
+
+# 빌드 시 생성됩니다 (npm run sitemap)
+apps/blog/public/sitemap.xml
+apps/blog/public/robots.txt

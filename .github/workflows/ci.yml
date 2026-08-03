@@ -1,0 +1,75 @@
+name: CI
+
+# 배포 워크플로(deploy-pages.yml)는 main 푸시에서만 돌기 때문에,
+# PR 단계에서 검증이 비는 것을 막기 위한 워크플로입니다.
+on:
+  # base 를 제한하지 않습니다 — 스택 PR(다른 PR 브랜치를 base 로 하는 PR)도
+  # 검증돼야 하기 때문입니다. main 대상만 걸면 그런 PR 이 무검증으로 남습니다.
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      SITE_ORIGIN: https://rosieoh.github.io
+      VITE_BASE_PATH: /BetweenTheLines/
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      # 프리렌더까지 포함한 블로그 파이프라인
+      - name: Build blog
+        run: npm run build
+
+      # 관리자 앱은 배포하지 않지만 깨지지 않는지는 확인합니다.
+      - name: Build admin
+        run: npm run build:admin
+
+      - name: 프리렌더 산출물 검증
+        run: |
+          dist=apps/blog/dist
+          test -f "$dist/index.html"
+          test -f "$dist/404.html"
+          test -f "$dist/sitemap.xml"
+          test -f "$dist/robots.txt"
+          count=$(find "$dist/post" -name index.html | wc -l)
+          echo "프리렌더된 포스트: $count개"
+          test "$count" -gt 0
+
+      # 관리자 코드가 공개 배포본에 섞여 들어가지 않도록 막는 회귀 방지 검사입니다.
+      # 마커는 apps/admin 에만 존재해야 하는 문자열들입니다.
+      # 글 본문에 인용하는 경우도 걸리므로, 글에서는 값을 마스킹하세요.
+      - name: 블로그 번들에 관리자 코드 미포함 확인
+        run: |
+          dist=apps/blog/dist
+          ADMIN_MARKERS=(rosie2025 rosie_blog_auth AdminDashboard)
+          for needle in "${ADMIN_MARKERS[@]}"; do
+            if grep -rqF "$needle" "$dist"; then
+              echo "::error::공개 배포본에 관리자 코드가 포함됐습니다: $needle"
+              exit 1
+            fi
+          done
+          echo "관리자 코드 미포함 확인 완료"
