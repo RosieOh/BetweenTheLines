@@ -119,6 +119,15 @@
 }
 
 @layer utilities {
+  /* 가로 스크롤 목록(카테고리 칩, 시리즈 탭)에서 스크롤바를 숨깁니다. */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
   .line-clamp-2 {
     display: -webkit-box;
     -webkit-line-clamp: 2;
