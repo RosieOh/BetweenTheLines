@@ -1,0 +1,288 @@
+---
+title: 'Jenkins + Gitea Blue-Green 무중단 배포 플레이북: 두 프로젝트에 적용하며 다듬은 것'
+date: '2026-08-03'
+author: '오태훈'
+description: '자체 호스팅 Gitea와 Jenkins로 무중단 배포를 구성하고 다른 프로젝트에 재적용하며 정리한 플레이북. 헬스 게이트가 곧 롤백이 되는 구조와 두 번째 적용에서만 드러난 함정들을 다룹니다.'
+category: 'DevOps'
+tags: ['Jenkins', 'Gitea', 'BlueGreen', '무중단배포', 'CI/CD']
+readTime: '15분'
+thumbnail: 'cicd'
+---
+
+# Jenkins + Gitea Blue-Green 무중단 배포 플레이북
+
+자체 호스팅 Gitea를 쓰는 소규모 프로젝트에서 배포를 자동화했습니다.
+한 프로젝트에서 구성한 뒤 다른 프로젝트에 그대로 옮겨봤고, **두 번째 적용에서 진짜 함정들이 나왔습니다.**
+
+이 글은 그 과정에서 다듬은 재사용 가능한 형태입니다.
+사내 시스템 정보는 전부 걷어내고 패턴만 남겼습니다.
+
+## 🧭 전제와 구조
+
+목표는 소박했습니다. **1코어 2GB짜리 단일 서버**에서 무중단 배포를 하는 것.
+쿠버네티스도 없고 별도 CI 서버도 없습니다.
+
+```
+git push(main) → Gitea webhook → Jenkins 컨테이너 (배포 대상과 같은 호스트)
+   ① SCM 체크아웃
+   ② docker build  (호스트 데몬 사용 = DooD)
+   ③ ci-deploy.sh → blue-green 전환
+```
+
+핵심 결정은 **Jenkins를 배포 대상과 같은 호스트에 컨테이너로 띄우는 것**이었습니다.
+
+이러면 `docker save | scp`로 이미지를 옮기는 단계가 통째로 사라집니다.
+빌드한 이미지가 이미 배포 대상 호스트의 데몬에 있으니까요.
+
+물론 트래픽이나 빌드가 커지면 CI 서버를 분리해야 합니다.
+하지만 그 전까지는 이 구성이 압도적으로 단순합니다.
+
+### DinD가 아니라 DooD
+
+Jenkins 이미지에 Docker **CLI만** 설치하고, 호스트 소켓을 마운트합니다.
+
+```dockerfile
+FROM jenkins/jenkins:lts-jdk17
+# docker-ce-cli + compose-plugin + buildx-plugin (데몬은 설치 안 함)
+ARG DOCKER_GID
+RUN groupmod -g ${DOCKER_GID} docker && usermod -aG docker jenkins
+```
+
+`DOCKER_GID`를 빌드 인자로 받는 게 포인트입니다.
+호스트의 docker 그룹 GID가 서버마다 다릅니다. 제가 겪은 두 서버는 각각 **999**와 **988**이었습니다.
+이걸 하드코딩하면 두 번째 서버에서 권한 에러가 납니다.
+
+## 🔀 Blue-Green — Nginx upstream 스위칭
+
+포트를 바꾸는 게 아니라 **Nginx upstream을 바꿉니다.**
+
+```
+app-blue   (컨테이너, expose 만 — 호스트 포트 게시 안 함)
+app-green  (컨테이너, expose 만)
+nginx      (호스트 80/443 게시, upstream.conf 로 대상 선택)
+```
+
+앱 컨테이너는 **호스트에 포트를 열지 않습니다.** Docker 네트워크 안에서 이름으로만 접근합니다.
+그래서 blue와 green이 같은 내부 포트를 써도 충돌이 없습니다.
+
+전환은 `nginx -s reload`입니다. **재시작이 아니라 reload**라 연결이 끊기지 않습니다.
+실제로 배포를 여러 번 돌린 뒤 확인해보니 nginx 컨테이너는 **13일째 무재시작**이었습니다.
+
+### 배포 스크립트 5단계
+
+```bash
+# 1. workspace → 배포 디렉터리로 compose/nginx 설정 동기화
+#    단, upstream.conf 는 덮어쓰지 않는다 (현재 활성 슬롯 정보이므로)
+
+# 2. 현재 활성 슬롯을 읽어 반대 슬롯에 새 이미지 기동
+
+# 3. 헬스체크 (최대 90초)
+docker exec "$NEW_CONTAINER" curl -fsS "http://127.0.0.1:8080$HEALTH_PATH" || {
+  docker logs --tail 100 "$NEW_CONTAINER"
+  exit 1          # ← 여기서 끝. upstream 은 건드리지 않았다
+}
+
+# 4. upstream.conf 재작성 → nginx -s reload
+
+# 5. 활성 슬롯 기록 → 옛 슬롯 정지 → 미사용 이미지 정리
+```
+
+**1번의 예외 처리가 중요합니다.** `upstream.conf`는 현재 어느 슬롯이 살아 있는지를 담고 있습니다.
+workspace의 버전으로 덮어쓰면 방금 배포한 슬롯 정보가 날아갑니다.
+
+## 🛡️ 헬스 게이트가 곧 롤백이다
+
+이 구성에서 제일 마음에 드는 부분입니다. **별도 롤백 로직이 없습니다.**
+
+```
+헬스체크 실패 → exit 1 → upstream.conf 미변경 → 활성 슬롯은 이전 버전 그대로
+```
+
+전환 **전에** 게이트가 있으니 실패해도 서비스는 영향을 안 받습니다.
+"롤백"이라는 별도 동작을 만들 필요가 없습니다.
+
+실제로 발동했습니다. 어느 빌드에서 새 컨테이너가 기동에 실패했고,
+자동으로 롤백되어 기존 슬롯이 계속 서비스했습니다. 다운타임 0.
+
+성공 시 헬스 통과까지는 **15초** 정도였습니다.
+
+수동 롤백이 필요하면 이전 이미지 태그를 지정해 같은 스크립트를 돌리면 됩니다.
+
+```bash
+IMAGE_TAG=build-42 scripts/ci-deploy.sh <workspace> <deploy_dir>
+```
+
+### ⚠️ 활성 슬롯의 진실은 하나여야 한다
+
+여기서 실수를 하나 했습니다. 활성 슬롯을 **두 군데**에 두었습니다.
+
+- `.active-slot` 파일
+- `nginx/conf.d/upstream.conf`
+
+배포 중간에 이 둘이 어긋나는 상황이 실제로 생겼습니다.
+`upstream.conf`는 green을 가리키는데 `.active-slot`은 다른 값이었습니다.
+
+결론은 **`upstream.conf`가 유일한 진실**이라는 것입니다.
+실제로 트래픽을 받는 건 nginx 설정이지 텍스트 파일이 아니니까요.
+`.active-slot`은 사람이 보기 편한 미러 정도로만 쓰고, 판단 근거로 삼지 않아야 합니다.
+
+상태를 두 곳에 쓰면 언젠가 어긋납니다. **실제로 동작을 결정하는 쪽을 진실로 삼으세요.**
+
+## 🔗 Gitea 연동에서 막힌 것들
+
+| 지점 | 내용 |
+| --- | --- |
+| **첫 빌드는 수동이어야 한다** | Jenkinsfile의 `triggers{}`는 **1회 빌드가 돌아야 등록**됩니다. 그전엔 웹훅이 와도 무반응입니다 |
+| CSRF 403 | Jenkins REST 트리거는 크럼이 필요한데, 그냥 발급하면 403입니다. **쿠키 자를 유지**(`-c`/`-b`)해야 통과합니다 |
+| 첫 빌드 후 400 | Job이 파라미터화되면 `/build`는 400이 됩니다. `/buildWithParameters?...`로 바꿔야 합니다 |
+| JCasC 재기동 부작용 | Jenkins를 재기동하면 **JCasC가 Job을 재생성하며 파라미터가 초기화**됩니다. 다시 `/build`를 써야 합니다 |
+| 브랜치 필터 | 웹훅은 모든 push를 보냅니다. 필터는 Jenkinsfile에서 (`^refs/heads/main$`) |
+| 방화벽 | Gitea 서버의 **egress IP**를 미리 확인해 화이트리스트에 넣어야 웹훅이 도달합니다 |
+
+"첫 빌드는 수동" 이건 특히 시간을 많이 잡아먹습니다.
+웹훅 설정을 아무리 확인해도 안 되는데, 원인은 Jenkins 쪽이 아직 트리거를 등록하지 않은 것입니다.
+
+## 🤖 JCasC — 셋업 마법사 없이 뜨게 하기
+
+Configuration as Code 플러그인으로 관리자 계정·권한·자격증명·**Job까지** 코드로 정의했습니다.
+
+```yaml
+jenkins:
+  securityRealm: { local: { allowsSignup: false, users: [...] } }
+  authorizationStrategy: { loggedInUsersCanDoAnything: { allowAnonymousRead: false } }
+credentials:
+  system: { domainCredentials: [{ credentials: [{ usernamePassword: { id: "gitea-cred", ... } }] }] }
+jobs:
+  - script: >
+      pipelineJob('my-app-prod') { ... }     // job-dsl 로 Job 자동 생성
+```
+
+컨테이너를 처음 띄우면 셋업 마법사 비밀번호를 입력할 필요 없이 바로 준비됩니다.
+
+`JAVA_OPTS`에 `-Djenkins.install.runSetupWizard=false`와 `-Xmx512m`을 넣었습니다.
+2GB 박스에서 힙 상한을 안 걸면 OOM이 납니다.
+
+## 💀 두 번째 프로젝트에서만 나온 함정 3가지
+
+첫 프로젝트에서는 안 나왔는데, 같은 구성을 옮기니 터진 것들입니다.
+
+### 1. 플러그인 미러가 도달 불가한 지역으로 라우팅됨
+
+Jenkins 이미지 빌드가 **무한 정지**했습니다.
+
+기본 업데이트 센터(`get.jenkins.io`)는 mirrorbits로 지리적 미러를 고릅니다.
+그런데 그 서버에서 선택된 미러가 네트워크상 도달 불가였고, 무한 재시도에 빠졌습니다.
+
+로그만 봐서는 "느린 것"과 구분이 안 됩니다. 도달성을 직접 테스트해서 확인했습니다.
+
+```dockerfile
+ENV JENKINS_UC_DOWNLOAD=https://mirror.xmission.com/jenkins
+```
+
+**미러를 고정**했습니다. 재현 가능한 빌드를 원한다면 어차피 고정하는 게 맞습니다.
+
+참고로 진단 과정에서 헛짚은 것도 있었습니다.
+로그의 "ERROR"를 보고 문제라고 판단했는데 apt의 debconf tty 경고였고,
+폴링이 안 끝나는 건 SSH 채널 타임아웃이었습니다. **로그의 ERROR가 항상 원인은 아닙니다.**
+
+### 2. 배포 디렉터리를 `/root` 아래 두면 컨테이너가 통과 못 한다
+
+DooD 구성에는 제약이 하나 있습니다.
+
+> compose의 상대 bind 경로는 **호스트 데몬이 해석**합니다.
+> 그래서 배포 디렉터리를 Jenkins 컨테이너에도 **동일한 경로**로 마운트해야 합니다.
+
+배포 디렉터리가 `/root/app`이었습니다. 마운트한 디렉터리 자체 권한은 맞춰뒀는데도 실패했습니다.
+
+원인은 **상위 디렉터리** `/root`가 `700`이라는 것이었습니다.
+Jenkins 컨테이너는 uid 1000으로 도는데, `/root`를 통과(traverse)할 수 없습니다.
+
+경로 변경은 "동일 경로 마운트" 규칙 때문에 어려웠습니다. 그래서 이렇게 했습니다.
+
+```dockerfile
+RUN chmod 711 /root
+```
+
+**Jenkins 이미지 안에서만** `/root`에 실행 권한을 줍니다. 호스트의 `/root`는 그대로입니다.
+(플러그인 레이어 캐시를 살리려고 설치 뒤 레이어에 뒀습니다.)
+
+애초에 배포 디렉터리는 `/opt` 같은 곳에 두는 게 낫습니다.
+
+### 3. 클래스패스에서 읽는 시크릿은 런타임 마운트로 못 고친다
+
+앱이 기동하자마자 죽었습니다.
+
+```
+APPLICATION FAILED TO START
+```
+
+원인은 설정 파일 하나였습니다. 코드가 이렇게 읽고 있었습니다.
+
+```java
+new ClassPathResource("config/service-account.json")
+```
+
+**클래스패스**입니다. 즉 jar 안에 들어 있어야 합니다.
+그런데 그 파일은 `.gitignore` 대상이라 Jenkins의 클린 체크아웃에는 없었습니다.
+
+로컬에서는 잘 됐습니다. 개발 머신에는 그 파일이 있었으니까요.
+**"내 컴퓨터에서는 되는데"의 교과서적 사례**입니다.
+
+여기서 중요한 점: **런타임 볼륨 마운트로는 해결이 안 됩니다.**
+클래스패스에서 읽으니 jar 빌드 시점에 있어야 합니다.
+
+그래서 파이프라인에 스테이지를 하나 넣었습니다.
+
+```groovy
+stage('Inject secrets') {
+  steps {
+    // 서버의 보호된 경로에서 빌드 워크스페이스로 복사
+    sh 'cp -r ${SECRETS_DIR}/config src/main/resources/'
+  }
+}
+```
+
+시크릿은 저장소에 없고, 서버의 제한된 디렉터리에만 있으며, **빌드 직전에 주입**됩니다.
+
+이상적으로는 앱이 외부 경로에서 읽도록 고치는 게 맞습니다.
+하지만 코드 수정 없이 CI를 붙여야 하는 상황에서는 이게 현실적인 타협이었습니다.
+
+## 🧯 첫 프로젝트에서 이미 겪어 미리 막은 것들
+
+플레이북에 "함정" 섹션으로 적어둔 덕에 두 번째에는 안 겪은 것들입니다.
+
+- **CRLF `bad interpreter`** — Windows에서 셸 스크립트를 커밋하면 실행이 안 됩니다.
+  `.gitattributes`로 LF 고정 + `git add --renormalize .`
+- **ufw를 우회하는 Docker 게시 포트** — Docker는 iptables를 직접 건드려 ufw 규칙을 지나칩니다.
+  `DOCKER-USER` 체인에 규칙을 넣고 systemd로 영속화해야 합니다
+- **1코어 2GB OOM** — 스왑 4GB + `vm.swappiness=10` + JVM 힙 상한
+- **배포 디렉터리 권한** — `chgrp -R docker` + `chmod -R g+rwX` + **디렉터리 setgid(`chmod 2775`)**.
+  setgid가 없으면 새로 생긴 파일의 그룹이 달라집니다
+
+그리고 사소하지만 짜증났던 것: 배포 로그에 넣은 유니코드 기호(`▸`)가
+Windows 콘솔 인코딩에서 깨지며 SSH 러너가 죽었습니다. **출력 인코딩을 UTF-8로 고정**해야 합니다.
+
+## ✅ 검증
+
+"자동화했다"는 걸 어떻게 확인했는지도 적어둡니다.
+
+- **push 웹훅이 자동 트리거한 빌드가 SUCCESS** — 수동 트리거가 아닌 진짜 end-to-end
+- 헬스 15초 통과 → nginx reload → 옛 슬롯 정리
+- 외부 엔드포인트 헬스 200 (3회 연속)
+- **nginx 컨테이너 무재시작 13일** — 무중단의 직접 증거
+
+특히 첫 번째가 중요합니다. 수동으로 빌드를 돌려놓고 "자동화 완료"라고 하기 쉬운데,
+**실제로 push해서 도는 걸 봐야** 웹훅·필터·트리거 등록이 전부 맞았다는 게 증명됩니다.
+
+## 📌 정리 — 재사용 체크리스트
+
+- **Jenkins를 배포 대상과 같은 호스트에** 두면 이미지 운반 단계가 사라집니다 (소규모 한정)
+- DooD에서는 **배포 디렉터리를 동일 경로로 마운트**해야 compose 상대 경로가 해석됩니다
+- `DOCKER_GID`는 **서버마다 다릅니다.** 빌드 인자로 받으세요
+- **헬스 게이트를 upstream 전환 앞에 두면 롤백 로직이 필요 없습니다**
+- **활성 슬롯의 진실은 하나여야 합니다.** 실제로 트래픽을 결정하는 쪽(nginx 설정)을 기준으로
+- Jenkins 트리거는 **1회 빌드 후 등록**됩니다. 첫 빌드는 수동으로
+- 플러그인 **미러를 고정**하세요. 지리적 라우팅은 재현성을 깹니다
+- **클래스패스에서 읽는 시크릿은 빌드타임에 주입**해야 합니다. 런타임 마운트로는 안 됩니다
+- `.gitattributes`로 **LF 고정** — Windows에서 커밋한 셸 스크립트는 실행이 안 됩니다
+- 검증은 **실제 push로** 하세요. 수동 트리거 성공은 자동화 증명이 아닙니다
