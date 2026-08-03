@@ -59,10 +59,13 @@ jobs:
           test "$count" -gt 0
 
       # 관리자 코드가 공개 배포본에 섞여 들어가지 않도록 막는 회귀 방지 검사입니다.
+      # 마커는 apps/admin 에만 존재해야 하는 문자열들입니다.
+      # 글 본문에 인용하는 경우도 걸리므로, 글에서는 값을 마스킹하세요.
       - name: 블로그 번들에 관리자 코드 미포함 확인
         run: |
           dist=apps/blog/dist
-          for needle in rosie2025 rosie_blog_auth AdminDashboard; do
+          ADMIN_MARKERS=(rosie2025 rosie_blog_auth AdminDashboard)
+          for needle in "${ADMIN_MARKERS[@]}"; do
             if grep -rqF "$needle" "$dist"; then
               echo "::error::공개 배포본에 관리자 코드가 포함됐습니다: $needle"
               exit 1
