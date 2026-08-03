@@ -1,0 +1,341 @@
+---
+title: '[S3-SyncBridge] 한 파일을 38번 고쳤다: 워커가 모든 관심사의 착륙 지점이 된 이유'
+date: '2026-08-03'
+author: '오태훈'
+description: 'FTP-S3 이벤트 드리븐 오케스트레이터를 만들며 프로세서 한 파일을 38번 수정했습니다. 그중 실제 버그 수정은 두세 건이었고 나머지는 전부 새 기능이 그 파일로 착륙한 결과였습니다.'
+category: 'DevOps'
+tags: ['NestJS', 'BullMQ', '이벤트드리븐', '멱등성', 'S3']
+readTime: '14분'
+thumbnail: 'architecture'
+---
+
+# [S3-SyncBridge] 한 파일을 38번 고쳤다
+
+SFTP로 올라온 파일을 S3로 옮기는 오케스트레이터를 NestJS로 만들었습니다.
+학습 목적이었고, 이벤트 드리븐 아키텍처를 제대로 밟아보는 게 목표였습니다.
+
+끝나고 세션 로그를 집계해보니 이런 결과가 나왔습니다.
+
+```
+README.md                     42회
+ingestion.processor.ts        38회   ← 소스 파일 중 1위
+docker-compose.yml            37회
+config/configuration.ts       34회
+```
+
+`ingestion.processor.ts`는 워커입니다. 큐에서 잡을 꺼내 파일을 옮기는 파일 하나.
+**38번을 고쳤는데 그중 진짜 버그 수정은 두세 건뿐**이었습니다.
+
+나머지는 전부 **새 기능이 그 파일로 착륙한 결과**였습니다. 그 얘기를 해보려 합니다.
+
+## 🧭 최종 구조
+
+먼저 결과부터 보면 이렇습니다.
+
+```
+SFTP :2022 → SFTPGo → POST /v1/sftp/on-upload
+  ├ WebhookAuthGuard (상수시간 토큰 비교)
+  ├ DTO 검증
+  ├ action !== 'upload' → IGNORED / status !== 1 → IGNORED
+  ├ resolveWithinRoot() 경로 이탈 방어 → IGNORED
+  ├ idempotencyKey = sha256(username|path|size|timestamp|session_id)
+  ├ trace carrier 캡처
+  └ createTransferWithOutbox({PENDING 행}, carrier)   ★ 한 트랜잭션
+        → null 이면 DUPLICATE (unique 충돌)
+     ...커밋 후 outbox relay 가 큐로 발행
+→ BullMQ 'file-transfers' → IngestionProcessor
+     validation → quota → antivirus → content-type
+     체크섬(MD5+SHA-256 단일 패스)
+     routing.resolve() → {bucket, key}
+     [옵션] AES-256-GCM 봉투 암호화
+     uploadStream
+     verifyIntegrity(ETag == 원본 MD5)
+     markSuccess → metrics → quota 기록 → transfer.completed 발행
+```
+
+프로세서의 최종 생성자 의존성은 **10개**입니다.
+repository, storage, pipeline, routing, crypto, events, quota, metrics, dlq, config.
+
+이 숫자가 38회의 이유를 거의 다 설명합니다.
+
+## 📈 38회가 쌓인 순서
+
+시간순으로 묶으면 11개 물결이었습니다.
+
+| 물결 | 무엇이 들어왔나 |
+| --- | --- |
+| 1 | 최초 작성 — EventEmitter 기반, 손수 짠 지수 백오프 재시도 루프 |
+| 2 | **전면 재작성 ①** — 세마포어 동시성 + in-flight Set 중복 차단 + 체크섬 무결성 |
+| 3 | Prometheus 메트릭 (in-flight 게이지, 타이머, 성공/실패 카운터) |
+| 4 | **전면 재작성 ②** — EventEmitter → **BullMQ WorkerHost** |
+| 5 | ProcessingPipeline + `NonRetryableError` 통합 |
+| 6 | DLQ (Dead Letter Queue) |
+| 7 | OpenTelemetry 스팬 |
+| 8 | RoutingService 도입, 자체 키 생성 코드 삭제 |
+| 9 | 봉투 암호화 |
+| 10 | 아웃바운드 이벤트 발행 |
+| 11 | 테넌트 쿼터 기록 |
+
+보면 알 수 있듯 **각 물결은 프로세서의 버그가 아니라 시스템의 새 관심사**입니다.
+메트릭, 추적, 암호화, 쿼터… 전부 "파일 하나 옮기는 그 순간"에 붙습니다.
+
+워커는 **모든 횡단 관심사가 만나는 통합 이음매(integration seam)** 였습니다.
+이런 파일은 원래 많이 고쳐집니다. 문제는 그게 응집도 문제인지 아닌지 구분하는 것입니다.
+
+## 🔁 배운 것 1 — 재시도는 큐가 가져야 한다
+
+재시도 소유권이 **세 번 이사**했습니다.
+
+```
+① 손수 짠 루프          for (attempt of 1..3) { try { ... } catch { await sleep(backoff) } }
+② 세마포어 게이트        동시성 제한 + in-flight Set
+③ BullMQ 위임           attempts: 3, backoff: { type: 'exponential', delay: 1000 }
+```
+
+③으로 가면서 `setTimeout as sleep` import가 코드에서 사라졌습니다. 그 흔적이 남아 있습니다.
+
+큐에 맡기면 얻는 게 명확합니다. 재시도 카운트가 **프로세스 밖에** 있으니 재시작에도 살아남고,
+워커를 여러 개 띄워도 중복 처리가 안 생깁니다.
+
+```ts
+defaultJobOptions: {
+  attempts: transferMaxAttempts,           // 기본 3
+  backoff: { type: 'exponential', delay: 1000 },
+  removeOnComplete: 1000,                  // 최근 윈도우만 보존
+  removeOnFail: false,                     // 실패 잡은 영구 보존 (디버깅)
+}
+```
+
+`removeOnFail: false`가 실전에서 유용했습니다. 실패한 잡의 페이로드와 스택이 그대로 남습니다.
+
+## 🔀 배운 것 2 — 부분 실패는 종결 지점을 둘로 쪼갠다
+
+BullMQ로 옮기면서 예상 못 한 게 생겼습니다.
+
+**재시도가 내 함수 바깥에서 돌아갑니다.** 그래서 "이 전송이 끝났다"를 판정하는 지점이 둘로 갈립니다.
+
+```ts
+async runTransfer(job) {
+  try {
+    // ...
+  } catch (err) {
+    if (err instanceof NonRetryableError) {
+      // ① 즉시 종결: 재시도할 이유가 없음
+      await this.markFailed(...);
+      this.metrics.recordFailure(...);
+      await this.events.publish('transfer.failed', ...);
+      await this.dlq.add(...);
+      return;
+    }
+    throw err;   // BullMQ 가 재시도하도록 위임
+  }
+}
+
+@OnWorkerEvent('failed')
+async onFailed(job, err) {
+  if (job.attemptsMade < totalAttempts) return;   // 아직 재시도 남음
+  // ② 소진 종결: 여기서도 같은 4줄을 해야 함
+  await this.markFailed(...);
+  this.metrics.recordFailure(...);
+  await this.events.publish('transfer.failed', ...);
+  await this.dlq.add(...);
+}
+```
+
+**DB 종결 · 메트릭 · 이벤트 · DLQ 이 4줄 세트가 코드에 두 번 등장합니다.**
+보기 싫지만 합칠 수가 없습니다. 한쪽은 동기 흐름 안이고 한쪽은 이벤트 핸들러니까요.
+
+여기서 `NonRetryableError`를 분리한 게 중요했습니다.
+빈 파일, 크기 초과, 바이러스 검출, 소스 파일 없음 — 이런 건 세 번 재시도해도 결과가 같습니다.
+즉시 종결하지 않으면 **무의미한 재시도 3회 + 지수 백오프 대기**를 매번 냅니다.
+
+## 🔐 배운 것 3 — 멱등성이 4층으로 쌓였다
+
+중복 처리를 막으려고 방어를 계속 덧댔습니다.
+
+| 층 | 방법 | 막는 것 |
+| --- | --- | --- |
+| ① | `idempotencyKey` UNIQUE 인덱스 | 같은 웹훅 재전송 |
+| ② | 워커 진입 시 `status === SUCCESS`면 skip | 이미 끝난 잡 재실행 |
+| ③ | in-flight Set | 복구 스위퍼와 워커의 동시 처리 |
+| ④ | **Transactional Outbox** | DB 저장과 큐 발행 사이의 dual-write 창 |
+
+여기서 깨달은 게 있습니다. **①~③은 ④가 없어서 필요했던 우회책**이었습니다.
+
+원래 흐름은 이랬습니다.
+
+```ts
+await repository.save(transfer);   // DB 커밋
+await queue.add(job);              // ← 여기서 죽으면?
+```
+
+DB에는 PENDING 행이 있는데 큐에는 잡이 없습니다. 영원히 처리 안 됩니다.
+그래서 복구 스위퍼를 만들었고, 스위퍼와 워커가 같은 행을 동시에 잡는 문제가 생겨 in-flight Set이 필요했습니다.
+
+아웃박스를 도입하면 **저장과 발행이 한 트랜잭션**이 됩니다.
+
+```ts
+// 전송 행 + outbox 이벤트를 같은 트랜잭션에 쓴다
+await outbox.createTransferWithOutbox(transfer, carrier);
+// 커밋 후 relay 가 outbox 를 읽어 큐에 발행
+```
+
+dual-write 창 자체가 사라지니 우회책들의 존재 이유가 약해집니다.
+**근본을 고치면 그 위에 쌓은 방어가 불필요해진다**는 걸 순서를 거꾸로 겪으면서 배웠습니다.
+
+## 🌊 배운 것 4 — 스트림은 되감기지 않는다
+
+업로드 재시도에서 걸린 게 있습니다.
+
+`PutObjectCommand`에 읽기 스트림을 넘겼는데, 업로드 중 네트워크가 끊기면 **스트림을 되감을 수 없습니다.**
+이미 소비된 스트림으로 재시도하면 잘린 파일이 올라갑니다.
+
+두 가지로 대응했습니다.
+
+- **재시도마다 `createReadStream`을 새로 연다** — 스트림을 재사용하지 않음
+- 한 파트를 넘는 크기는 `@aws-sdk/lib-storage`의 멀티파트 업로드 — 파트 단위로 재시도
+
+그리고 무결성 검증에서 또 하나 걸렸습니다.
+
+```ts
+verifyIntegrity(etag, sourceMd5)   // ETag == MD5 비교
+```
+
+**암호화를 켜면 이게 깨집니다.** 저장된 건 암호문이니 ETag가 원본 MD5와 다릅니다.
+암호화 시엔 이 검증을 건너뛰되, 근거를 주석으로 남겼습니다.
+
+```
+GCM auth tag guarantees ciphertext integrity, sha256 covers the source
+```
+
+## 🧪 테스트 — 목킹의 대가
+
+유닛 테스트는 **가장 까다로운 로직에만** 집중했습니다. `ingestion.service.spec.ts` 5개 케이스입니다.
+
+1. 정상 업로드 → 아웃박스로 원자적 저장
+2. 중복 웹훅(unique 충돌) → `DUPLICATE` no-op
+3. `action !== 'upload'` → `IGNORED`, 아웃박스 미호출
+4. `status !== 1` → `IGNORED`
+5. **경로 이탈(`../../etc/passwd`) 거부** — 아웃박스 미호출
+
+그런데 이 spec 파일이 **16번 수정됐습니다.** 이유가 교훈적입니다.
+
+| 변경 | 테스트가 깨진 이유 |
+| --- | --- |
+| EventEmitter → BullMQ | `events.emit` 기대 → `queue.add` |
+| 큐 직접 발행 → 아웃박스 | `queue.add` 기대 → `outbox.createTransferWithOutbox` |
+| 멀티테넌시 도입 | 테넌트 목 추가 |
+| OpenTelemetry | enqueue 인자에 carrier 추가돼 단언 실패 → `expect.any(Object)`로 완화 |
+
+**서비스가 협력자를 목킹하면, 트랜스포트를 갈아탈 때마다 테스트가 함께 깨집니다.**
+이 프로젝트에서만 네 번 겪었습니다.
+
+그래서 E2E는 목킹 없이 갔습니다. Testcontainers로 실제 Postgres·Redis·MinIO를 띄우고
+웹훅 → 워커 → S3 전 구간을 검증합니다. **11.6초** 걸립니다.
+
+## ⚙️ 배운 것 5 — 환경변수에서 행동을 추론하지 마라
+
+`env.validation.ts`도 17번 수정됐습니다. 그중 하나가 특히 기억에 남습니다.
+
+컨테이너가 크래시 루프에 빠졌습니다. 원인은 로그 포맷이었습니다.
+
+```ts
+// 이렇게 짜여 있었음
+const pretty = process.env.NODE_ENV === 'development';
+```
+
+`NODE_ENV=development`로 컨테이너를 띄우니 `pino-pretty`를 로드하려 했는데,
+그건 **devDependency**라 프로덕션 이미지에 없었습니다.
+
+고친 방향은 조건을 바꾸는 게 아니라 **변수를 분리**하는 것이었습니다.
+
+```ts
+LOG_PRETTY: boolean    // 기본 false → JSON
+```
+
+> **환경변수에서 행동을 추론하지 말고, 행동을 별도 변수로 선언하라.**
+
+`NODE_ENV`는 너무 많은 것을 동시에 의미합니다. 로그 포맷, 에러 상세, 캐시, 최적화…
+그걸 한 변수로 묶으면 언젠가 조합이 어긋납니다.
+
+검증을 부트스트랩에 두니 다른 것도 잡혔습니다.
+E2E에서 `APP_PORT=0`을 넣었다가 `@Min(1)`에 걸려 즉시 실패했습니다.
+"`app.init()`은 포트를 바인딩하지도 않는다"는 걸 알기 전에 검증이 먼저 막아줬습니다.
+
+## 🚨 실전에서 가장 아팠던 것 — RLS가 조용히 무효화됨
+
+멀티테넌시를 붙이고 Row Level Security를 켰습니다. 그리고 두 테넌트로 조회해봤습니다.
+
+```
+acme_viewer    → 9행 (전체)   ← ?
+default_viewer → 9행 (전체)   ← ?
+```
+
+**RLS가 전혀 작동하지 않았습니다.** 정책은 분명히 걸려 있는데요.
+
+원인은 Docker Postgres 이미지의 기본값이었습니다.
+
+> `POSTGRES_USER`로 만들어지는 계정은 **슈퍼유저**이고,
+> **슈퍼유저는 `FORCE ROW LEVEL SECURITY`조차 우회합니다.**
+
+앱이 그 슈퍼유저로 접속하고 있었으니 정책이 통째로 무시된 것입니다.
+
+전용 비-슈퍼유저 롤을 만들고 앱이 그 롤로 접속하게 바꿨습니다.
+
+```
+admin          → 9행 (전체)
+acme_viewer    → 1행 (acme 만)
+default_viewer → 8행 (default 만)
+```
+
+**정책을 걸었다는 것과 정책이 적용된다는 것은 다릅니다.**
+RLS는 반드시 실제 롤로 조회해서 확인해야 합니다.
+
+## 🔓 또 하나 — 암호화의 단방향 함정
+
+암호화한 객체를 다운로드했더니 500이 났습니다.
+
+```ts
+// KEK 를 암호화가 켜져 있을 때만 로드하고 있었음
+if (config.encryptionEnabled) {
+  this.kek = loadKek();
+}
+```
+
+암호화를 켜서 저장한 다음 **끄면, 복호화가 영구히 불가능해집니다.**
+저장된 객체는 여전히 암호문인데 키를 안 읽으니까요.
+
+```ts
+// KEK 는 제공되면 활성화 여부와 무관하게 항상 로드한다
+```
+
+암호화 플래그는 **"앞으로 쓸 것인가"** 이지 **"과거를 읽을 것인가"** 가 아닙니다.
+이 둘을 한 플래그로 묶으면 데이터가 잠깁니다.
+
+## 📊 검증 수치
+
+정량으로 확인한 것들입니다.
+
+```
+암호화:      원본 31B → 저장 59B  (+28 = 12B IV + 16B GCM tag)
+쿼터 강제:   Object quota exceeded for tenant 'default': 1+1 > 1 objects
+웹훅 재시도: webhook_deliveries_total{failed} = 5
+DLQ:        dead_letter_total = 2
+CDC:        Debezium 토픽 3개 생성 + 변경 이벤트 실소비
+최종:       유닛 23/23, E2E 3/3
+```
+
+## 📌 정리
+
+- **워커는 모든 횡단 관심사가 착륙하는 곳**입니다. 수정 횟수가 많다고 설계가 나쁜 게 아닙니다
+- **재시도는 애플리케이션이 아니라 큐가 소유해야** 합니다. 프로세스 밖에 있어야 재시작에 살아남습니다
+- 큐에 재시도를 맡기면 **종결 지점이 둘로 갈립니다.** 비재시도 실패와 소진 실패 양쪽을 처리하세요
+- 멱등성 방어가 여러 겹 쌓이면 **근본에 dual-write가 있는지** 의심하세요. 아웃박스가 답인 경우가 많습니다
+- **스트림은 되감기지 않습니다.** 재시도마다 새로 여세요
+- **`NODE_ENV`에서 행동을 추론하지 마세요.** 행동마다 변수를 두세요
+- **RLS는 슈퍼유저를 우회합니다.** 앱은 전용 비-슈퍼유저 롤로 접속해야 합니다
+- 암호화 플래그로 **복호화 경로까지 끄지 마세요.** 데이터가 영구히 잠깁니다
+- 서비스가 협력자를 목킹하면 **트랜스포트를 바꿀 때마다 테스트가 깨집니다.** E2E는 실물로 가세요
+
+마지막으로 하나. 이 38회는 **git 히스토리에 전혀 안 남아 있습니다.**
+커밋은 3개뿐이거든요. 무엇을 몇 번 고쳤는지는 세션 로그에만 있었습니다.
