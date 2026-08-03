@@ -12,9 +12,10 @@ import ReadingProgressBar from "@/components/blog/ReadingProgressBar";
 import ScrollToTop from "@/components/blog/ScrollToTop";
 import GiscusComments from "@/components/blog/GiscusComments";
 import NotFoundInline from "@/components/blog/NotFoundInline";
+import SeriesNav from "@/components/blog/SeriesNav";
 import { useLike } from "@/lib/useLike";
 import { SyntaxHighlighter, resolveLanguage } from "@/lib/syntaxHighlighter";
-import { getAllPosts, loadPostContent, categoryStyles, sanitizeHref, blogConfig } from "@btl/core";
+import { getAllPosts, loadPostContent, categoryStyles, sanitizeHref, blogConfig, findSeriesPosition } from "@btl/core";
 
 interface Heading {
   level: number;
@@ -254,7 +255,7 @@ function makeMarkdownComponents(isDark: boolean): Components {
     },
     blockquote({ children }) {
       return (
-        <blockquote className="border-l-4 border-accent pl-5 my-6 text-muted-foreground italic">
+        <blockquote className="my-6 rounded-r-lg border-l border-border bg-secondary/60 py-3 pl-5 pr-4 text-muted-foreground">
           {children}
         </blockquote>
       );
@@ -466,6 +467,11 @@ const PostDetail = () => {
     return () => observer.disconnect();
   }, [headings]);
 
+  const seriesPosition = useMemo(
+    () => (post ? findSeriesPosition(post, allPosts) : null),
+    [post, allPosts]
+  );
+
   // 관련 글: 같은 카테고리이거나 태그가 겹치는 글 (allPosts는 이미 최신순)
   const relatedPosts = useMemo(() => {
     if (!post) return [];
@@ -597,6 +603,11 @@ const PostDetail = () => {
                   {liked ? "좋아요 취소" : "좋아요"}
                 </button>
               </div>
+
+              {/* 시리즈 이동 */}
+              {seriesPosition && (
+                <SeriesNav position={seriesPosition} currentId={post.id} />
+              )}
 
               {/* Tags */}
               <div className="flex flex-wrap gap-2 mt-8 pt-6 border-t border-border">

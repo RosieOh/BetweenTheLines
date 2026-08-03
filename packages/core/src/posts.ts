@@ -44,6 +44,49 @@ export function byOldest(a: PostMeta, b: PostMeta): number {
   return a.rawDate.localeCompare(b.rawDate);
 }
 
+/** 시리즈 안에서의 위치 — 상세 페이지의 이전/다음 이동에 씁니다. */
+export interface SeriesPosition {
+  key: string;
+  /** seriesOrder 오름차순으로 정렬된 같은 시리즈의 전체 글 */
+  posts: PostMeta[];
+  /** posts 안에서 현재 글의 0-based 위치 */
+  index: number;
+  previous?: PostMeta;
+  next?: PostMeta;
+}
+
+/**
+ * 주어진 글이 속한 시리즈와 앞뒤 글을 찾습니다.
+ * 시리즈가 없거나 혼자뿐이면 null 을 돌려줍니다.
+ */
+export function findSeriesPosition(
+  post: PostMeta,
+  allPosts: PostMeta[]
+): SeriesPosition | null {
+  if (!post.series) return null;
+
+  const posts = allPosts
+    .filter((p) => p.series === post.series)
+    .sort(
+      (a, b) =>
+        (a.seriesOrder ?? Number.MAX_SAFE_INTEGER) -
+        (b.seriesOrder ?? Number.MAX_SAFE_INTEGER)
+    );
+
+  if (posts.length < 2) return null;
+
+  const index = posts.findIndex((p) => p.id === post.id);
+  if (index === -1) return null;
+
+  return {
+    key: post.series,
+    posts,
+    index,
+    previous: posts[index - 1],
+    next: posts[index + 1],
+  };
+}
+
 // 카테고리 목록 — 추가/수정은 src/lib/blogConfig.ts 의 categoryList 를 수정하세요.
 export const categories = allCategoryKeys as readonly string[];
 
