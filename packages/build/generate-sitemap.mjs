@@ -6,13 +6,15 @@ import { postsDir, publicDir } from "./paths.mjs";
 import { siteOrigin, basePath, routePath } from "./siteUrl.mjs";
 import { staticRoutes } from "./routes.mjs";
 
-const today = new Date().toISOString().slice(0, 10);
-
 const posts = readPostsMeta(postsDir);
 
+// 목록/정적 페이지의 "마지막 변경"은 빌드한 날이 아니라 최신 글이 올라온 날입니다.
+// 빌드일을 쓰면 내용이 그대로여도 매일 sitemap 이 바뀝니다.
+const latestPostDate = posts[0]?.rawDate || new Date().toISOString().slice(0, 10);
+
 const urls = [
-  ...staticRoutes.map(({ route }) => ({ loc: route, lastmod: today })),
-  ...posts.map((post) => ({ loc: `/post/${post.id}`, lastmod: post.rawDate || today })),
+  ...staticRoutes.map(({ route }) => ({ loc: route, lastmod: latestPostDate })),
+  ...posts.map((post) => ({ loc: `/post/${post.id}`, lastmod: post.rawDate || latestPostDate })),
 ];
 
 function priorityFor(loc) {
